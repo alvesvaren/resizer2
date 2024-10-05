@@ -1,10 +1,7 @@
 #define OEMRESOURCE
 #include <windows.h>
 #include <iostream>
-#include <unordered_map>
 #include <chrono>
-#include <Psapi.h>
-#include <tchar.h>
 
 #pragma comment(lib, "user32.lib")
 

@@ -446,6 +446,8 @@ DWORD WINAPI WindowOperationThreadProc(LPVOID lpParam) {
                     currentWindowRect.bottom - currentWindowRect.top, TRUE);
             }
         }
+
+		Sleep(1); // Small delay to prevent high CPU usage
     }
     else if (ctx.operationType == RESIZE) {
         // Handle resizing

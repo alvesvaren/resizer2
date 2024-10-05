@@ -139,16 +139,16 @@ LRESULT CALLBACK LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lParam) {
             else if (wParam == WM_KEYUP || wParam == WM_SYSKEYUP) {
                 modKeyPressed = false;
                 if (didUseWindowsKey) {
-                    // Win + F12 does nothing, ugly workaround which stops the windows menu from appearing
+                    // Win + F13 does nothing, ugly workaround which stops the windows menu from appearing
 
                     INPUT inputs[2] = {};
                     ZeroMemory(inputs, sizeof(inputs));
 
                     inputs[0].type = INPUT_KEYBOARD;
-                    inputs[0].ki.wVk = VK_F12;
+                    inputs[0].ki.wVk = VK_F13;
 
                     inputs[1].type = INPUT_KEYBOARD;
-                    inputs[1].ki.wVk = VK_F12;
+                    inputs[1].ki.wVk = VK_F13;
                     inputs[1].ki.dwFlags = KEYEVENTF_KEYUP;
 
                     UINT uSent = SendInput(ARRAYSIZE(inputs), inputs, sizeof(INPUT));
@@ -161,7 +161,7 @@ LRESULT CALLBACK LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lParam) {
 }
 
 void SetWindowMaximized(HWND window, bool maximized) {
-    ShowWindow(window, maximized ? SW_RESTORE : SW_MAXIMIZE);
+    ShowWindow(window, maximized ? SW_MAXIMIZE : SW_RESTORE);
 }
 
 LRESULT CALLBACK LowLevelMouseProc(int nCode, WPARAM wParam, LPARAM lParam) {
@@ -303,7 +303,7 @@ void startWindowOperation() {
             // Double-click detected, toggle maximize/restore
             WINDOWPLACEMENT wp = { sizeof(WINDOWPLACEMENT) };
             GetWindowPlacement(ctx.targetWindow, &wp);
-            SetWindowMaximized(ctx.targetWindow, wp.showCmd == SW_MAXIMIZE);
+            SetWindowMaximized(ctx.targetWindow, wp.showCmd != SW_MAXIMIZE);
 
             ctx.inProgress = false;
             CloseHandle(ctx.hEvent);
@@ -340,23 +340,26 @@ void SnapToMonitor(HWND window, HMONITOR screen) {
     RECT rect = info.rcWork; // Work area, excluding taskbars
 
     HMONITOR currentScreen = MonitorFromWindow(window, MONITOR_DEFAULTTONEAREST);
+
+	// Don't move the window if it's already on the target screen
     if (currentScreen == screen) {
-        SendMessage(window, WM_SETREDRAW, TRUE, 0); // Re-enable redraw
-        RedrawWindow(window, NULL, NULL, RDW_ERASE | RDW_FRAME | RDW_INVALIDATE); // Force redraw
         return;
     }
 
     WINDOWPLACEMENT wp = { sizeof(WINDOWPLACEMENT) };
-    GetWindowPlacement(window, &wp);
+    // Restore the window now, and get it's new placement
+    SetWindowMaximized(window, false);
+	GetWindowPlacement(window, &wp);
 
-    // Move the maximized window to the new monitor
-    wp.showCmd = SW_MAXIMIZE;  // Keep it maximized
-    wp.rcNormalPosition = info.rcWork;
-    SetWindowPlacement(window, &wp);
+	// Calculate the new position
+	int width = wp.rcNormalPosition.right - wp.rcNormalPosition.left;
+	int height = wp.rcNormalPosition.bottom - wp.rcNormalPosition.top;
+    int x = rect.left +(rect.right - rect.left - width) / 2;
+	int y = rect.top + (rect.bottom - rect.top - height) / 2;
 
-    // Move the window to the new monitor without restoring it
-    SetWindowPos(window, NULL, rect.left, rect.top, rect.right - rect.left, rect.bottom - rect.top,
-        SWP_NOZORDER);
+	// Move and maximize the window
+	MoveWindow(window, x, y, width, height, TRUE);
+	SetWindowMaximized(window, true);
 }
 
 DWORD WINAPI WindowOperationThreadProc(LPVOID lpParam) {

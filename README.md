@@ -12,4 +12,3 @@ Rewrite of https://github.com/IsacEkeroth/ahk-resize-windows in C++
 ## Extra features:
 - Changes the system cursors to reflect what's happening
 - Can be closed from the system tray
-- 

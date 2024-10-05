@@ -5,6 +5,10 @@
 
 #pragma comment(lib, "user32.lib")
 
+#define TRAY_ICON_UID 1001
+#define WM_TRAYICON (WM_USER + 1)
+
+
 // Config
 const int DOUBLE_CLICK_THRESHOLD = 300; // ms
 const BYTE MIN_OPACITY = 64;
@@ -60,6 +64,7 @@ HHOOK hMouseHook = NULL;
 bool modKeyPressed = false;
 bool didUseWindowsKey = false;
 std::chrono::steady_clock::time_point lastClickTime;
+NOTIFYICONDATA nid;
 
 LRESULT CALLBACK LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lParam);
 LRESULT CALLBACK LowLevelMouseProc(int nCode, WPARAM wParam, LPARAM lParam);
@@ -137,6 +142,41 @@ void SetGlobalCursor() {
 	}
 }
 
+static void AddTrayIcon(HWND hWnd) {
+	nid.cbSize = sizeof(NOTIFYICONDATA);
+	nid.hWnd = hWnd;
+	nid.uID = TRAY_ICON_UID;
+	nid.uFlags = NIF_MESSAGE | NIF_ICON | NIF_TIP;
+	nid.uCallbackMessage = WM_TRAYICON;  // Message for tray icon interaction
+	nid.hIcon = LoadIcon(NULL, IDI_APPLICATION);  // Use default application icon
+	lstrcpy(nid.szTip, TEXT("Resizer (click to exit)"));  // Tray icon tooltip
+	Shell_NotifyIcon(NIM_ADD, &nid);
+}
+
+static void RemoveTrayIcon() {
+	Shell_NotifyIcon(NIM_DELETE, &nid);
+}
+
+LRESULT CALLBACK WindowProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
+	switch (uMsg) {
+	case WM_TRAYICON:
+		if (lParam == WM_LBUTTONDOWN || lParam == WM_RBUTTONDOWN) {
+			// Exit the program when the tray icon is clicked
+			PostQuitMessage(0);
+		}
+		break;
+
+	case WM_DESTROY:
+		RemoveTrayIcon();
+		PostQuitMessage(0);
+		break;
+
+	default:
+		return DefWindowProc(hWnd, uMsg, wParam, lParam);
+	}
+	return 0;
+}
+
 static BOOL CALLBACK MonitorEnumProc(HMONITOR hMonitor, HDC hdcMonitor, LPRECT lprcMonitor, LPARAM dwData) {
 	MonitorSearchData* data = (MonitorSearchData*)dwData;
 
@@ -165,6 +205,28 @@ static HMONITOR SysGetMonitorContainingPoint(int x, int y) {
 }
 
 int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine, int nCmdShow) {
+	// Register window class for tray icon
+	const wchar_t CLASS_NAME[] = L"TrayIconWindowClass";
+
+	WNDCLASS wc = {};
+	wc.lpfnWndProc = WindowProc;
+	wc.hInstance = hInstance;
+	wc.lpszClassName = CLASS_NAME;
+
+	RegisterClass(&wc);
+
+	// Create a window (hidden, just for receiving messages)
+	HWND hWnd = CreateWindowEx(0, CLASS_NAME, L"Resizer", WS_OVERLAPPEDWINDOW,
+		CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT,
+		NULL, NULL, hInstance, NULL);
+
+	if (hWnd == NULL) {
+		return 0;
+	}
+
+	// Add the tray icon
+	AddTrayIcon(hWnd);
+
 	hKeyboardHook = SetWindowsHookEx(WH_KEYBOARD_LL, LowLevelKeyboardProc, NULL, 0);
 	hMouseHook = SetWindowsHookEx(WH_MOUSE_LL, LowLevelMouseProc, NULL, 0);
 
@@ -173,11 +235,12 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine
 		return 1;
 	}
 
-	std::cout << "Initialized" << std::endl;
-
-	// Keep the window open
+	// Main message loop
 	MSG msg;
-	while (GetMessage(&msg, NULL, 0, 0)) {}
+	while (GetMessage(&msg, NULL, 0, 0)) {
+		TranslateMessage(&msg);
+		DispatchMessage(&msg);
+	}
 
 	UnhookWindowsHookEx(hKeyboardHook);
 	UnhookWindowsHookEx(hMouseHook);

@@ -2,6 +2,12 @@
 
 Rewrite of https://github.com/IsacEkeroth/ahk-resize-windows in C++
 
+## Installation:
+1. Download the latest version from https://github.com/alvesvaren/resizer2/releases/
+2. Move the program to somewhere other than your downloads
+3. Start the .exe file, and allow it in smartscreen if it pops up
+4. Follow the instructions under "Autostarting"
+
 ## How to use:
 - Win + Left Mouse Button to move windows. If a window is fullscreened or maximized, it will snap between monitors
 - Win + Right Mouse Button to resize windows from the closest corner
@@ -22,8 +28,7 @@ Rewrite of https://github.com/IsacEkeroth/ahk-resize-windows in C++
   If you accidentally did that, you can restart explorer.exe from task manager and it should fix it.
 - Running multiple instances of the program at the same time is not supported and may break stuff.
 
-## Autostarting
-
+## Autostarting:
 1. Open the "Task Scheduler"
 2. Click "Create Basic Task..."
 3. Give the task a cool name and press next

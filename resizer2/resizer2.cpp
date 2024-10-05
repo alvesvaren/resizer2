@@ -1,4 +1,3 @@
-// main.cpp
 #define OEMRESOURCE
 #include <windows.h>
 #include <iostream>
@@ -42,7 +41,6 @@ enum ResizerCursor {
 	UNSET,
 };
 
-// System cursor IDs
 const int systemCursors[] = {
 	OCR_NORMAL,
 	OCR_IBEAM,
@@ -95,23 +93,20 @@ static void snapToMonitor(HWND window, HMONITOR screen) {
 
 	HMONITOR currentScreen = MonitorFromWindow(window, MONITOR_DEFAULTTONEAREST);
 
-	// Don't move the window if it's already on the target screen
 	if (currentScreen == screen) {
 		return;
 	}
 
 	WINDOWPLACEMENT wp = { sizeof(WINDOWPLACEMENT) };
-	// Restore the window now, and get it's new placement
 	ShowWindow(window, SW_RESTORE);
 	GetWindowPlacement(window, &wp);
 
-	// Calculate the new position
+	// Calculate the new position (center of the new screen)
 	int width = wp.rcNormalPosition.right - wp.rcNormalPosition.left;
 	int height = wp.rcNormalPosition.bottom - wp.rcNormalPosition.top;
 	int x = rect.left + (rect.right - rect.left - width) / 2;
 	int y = rect.top + (rect.bottom - rect.top - height) / 2;
 
-	// Move and maximize the window
 	MoveWindow(window, x, y, width, height, TRUE);
 	ShowWindow(window, SW_MAXIMIZE);
 }
@@ -159,11 +154,9 @@ static BOOL CALLBACK MonitorEnumProc(HMONITOR hMonitor, HDC hdcMonitor, LPRECT l
 	return TRUE; // Continue enumerating if not found
 }
 
-// Function to find the monitor containing the point
 static HMONITOR SysGetMonitorContainingPoint(int x, int y) {
 	MonitorSearchData data = { x, y, NULL };
 
-	// Enumerate monitors and find which one contains the point
 	EnumDisplayMonitors(NULL, NULL, MonitorEnumProc, (LPARAM)&data);
 
 	// If no monitor is found, default to the primary monitor
@@ -189,7 +182,6 @@ int main() {
 	MSG msg;
 	while (GetMessage(&msg, NULL, 0, 0)) {}
 
-	// Unhook before exiting
 	UnhookWindowsHookEx(hKeyboardHook);
 	UnhookWindowsHookEx(hMouseHook);
 
@@ -296,7 +288,6 @@ LRESULT CALLBACK LowLevelMouseProc(int nCode, WPARAM wParam, LPARAM lParam) {
 	return CallNextHookEx(hMouseHook, nCode, wParam, lParam);
 }
 
-// Adjust window opacity
 void adjustWindowOpacity(int change) {
 	POINT pt;
 	GetCursorPos(&pt);
@@ -316,7 +307,6 @@ void adjustWindowOpacity(int change) {
 	}
 }
 
-// Minimize window under cursor
 void minimizeWindow() {
 	POINT pt;
 	GetCursorPos(&pt);
@@ -370,7 +360,6 @@ void startWindowOperation() {
 	GetWindowRect(ctx.targetWindow, &ctx.startWindowRect);
 	SetForegroundWindow(ctx.targetWindow);
 
-	// Create thread to handle operation
 	HANDLE hThread = CreateThread(NULL, 0, WindowOperationThreadProc, NULL, 0, NULL);
 	if (hThread != NULL) {
 		CloseHandle(hThread);
@@ -392,7 +381,6 @@ DWORD WINAPI WindowOperationThreadProc(LPVOID lpParam) {
 
 	if (ctx.operationType == MOVE) {
 		SetGlobalCursor<SIZEALL>();
-		// Handle moving
 		WINDOWPLACEMENT wp = { sizeof(WINDOWPLACEMENT) };
 		GetWindowPlacement(ctx.targetWindow, &wp);
 		bool maximized = wp.showCmd == SW_MAXIMIZE;
@@ -418,11 +406,10 @@ DWORD WINAPI WindowOperationThreadProc(LPVOID lpParam) {
 					currentWindowRect.bottom - currentWindowRect.top, TRUE);
 			}
 
-			Sleep(1); // Small delay to prevent high CPU usage
+			Sleep(1);
 		}
 	}
 	else if (ctx.operationType == RESIZE) {
-		// Handle resizing
 		bool isLeft = false, isTop = false;
 		int windowWidth = currentWindowRect.right - currentWindowRect.left;
 		int windowHeight = currentWindowRect.bottom - currentWindowRect.top;
@@ -468,7 +455,7 @@ DWORD WINAPI WindowOperationThreadProc(LPVOID lpParam) {
 			MoveWindow(ctx.targetWindow, newRect.left, newRect.top,
 				newRect.right - newRect.left, newRect.bottom - newRect.top, TRUE);
 
-			Sleep(1); // Small delay to prevent high CPU usage
+			Sleep(1);
 		}
 	}
 

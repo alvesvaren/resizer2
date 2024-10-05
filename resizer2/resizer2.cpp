@@ -205,7 +205,6 @@ static HMONITOR SysGetMonitorContainingPoint(int x, int y) {
 }
 
 int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine, int nCmdShow) {
-	// Register window class for tray icon
 	const wchar_t CLASS_NAME[] = L"TrayIconWindowClass";
 
 	WNDCLASS wc = {};
@@ -215,7 +214,6 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine
 
 	RegisterClass(&wc);
 
-	// Create a window (hidden, just for receiving messages)
 	HWND hWnd = CreateWindowEx(0, CLASS_NAME, L"Resizer", WS_OVERLAPPEDWINDOW,
 		CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT,
 		NULL, NULL, hInstance, NULL);
@@ -224,7 +222,6 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine
 		return 0;
 	}
 
-	// Add the tray icon
 	AddTrayIcon(hWnd);
 
 	hKeyboardHook = SetWindowsHookEx(WH_KEYBOARD_LL, LowLevelKeyboardProc, NULL, 0);
@@ -235,7 +232,6 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine
 		return 1;
 	}
 
-	// Main message loop
 	MSG msg;
 	while (GetMessage(&msg, NULL, 0, 0)) {
 		TranslateMessage(&msg);
@@ -487,6 +483,13 @@ DWORD WINAPI WindowOperationThreadProc(LPVOID lpParam) {
 		}
 		else {
 			SetGlobalCursor<SIZENESW>();
+		}
+
+		// Restore window if maximized
+		WINDOWPLACEMENT wp = { sizeof(WINDOWPLACEMENT) };
+		GetWindowPlacement(ctx.targetWindow, &wp);
+		if (wp.showCmd == SW_MAXIMIZE) {
+			ShowWindow(ctx.targetWindow, SW_RESTORE);
 		}
 
 		while (ctx.inProgress) {

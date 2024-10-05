@@ -63,6 +63,7 @@ HHOOK hKeyboardHook = NULL;
 HHOOK hMouseHook = NULL;
 bool modKeyPressed = false;
 bool didUseWindowsKey = false;
+bool shouldMinimize = false;
 std::chrono::steady_clock::time_point lastClickTime;
 NOTIFYICONDATA nid;
 
@@ -328,9 +329,18 @@ LRESULT CALLBACK LowLevelMouseProc(int nCode, WPARAM wParam, LPARAM lParam) {
 			}
 			break;
 		}
-		case WM_MBUTTONUP: {
+		// If we don't do this, weird stuff happens
+		case WM_MBUTTONDOWN: {
 			if (modKeyPressed) {
+				shouldMinimize = true;
 				didUseWindowsKey = true;
+				return 1;
+			}
+			break;
+		}
+		case WM_MBUTTONUP: {
+			if (shouldMinimize) {
+				shouldMinimize = false;
 				minimizeWindow();
 				return 1;
 			}

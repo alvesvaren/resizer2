@@ -1,4 +1,5 @@
 // main.cpp
+#define OEMRESOURCE
 #include <windows.h>
 #include <iostream>
 #include <unordered_map>
@@ -56,6 +57,58 @@ struct MonitorSearchData {
     int x, y;
     HMONITOR hMonitor;
 };
+
+enum ResizerCursor {
+    SIZEALL,
+	SIZENWSE,
+	SIZENESW,
+    UNSET,
+};
+
+int systemCursors[] = {
+	OCR_NORMAL,
+	OCR_IBEAM,
+	OCR_WAIT,
+	OCR_CROSS,
+	OCR_UP,
+	OCR_SIZENWSE,
+	OCR_SIZENESW,
+	OCR_SIZEWE,
+	OCR_SIZENS,
+	OCR_SIZEALL,
+	OCR_NO,
+	OCR_HAND,
+	OCR_APPSTARTING,
+};
+
+template <ResizerCursor cursor>
+void SetGlobalCursor() {
+	HCURSOR hCursor = NULL;
+	switch (cursor) {
+	case SIZEALL:
+		hCursor = LoadCursor(NULL, IDC_SIZEALL);
+		break;
+	case SIZENWSE:
+		hCursor = LoadCursor(NULL, IDC_SIZENWSE);
+		break;
+	case SIZENESW:
+		hCursor = LoadCursor(NULL, IDC_SIZENESW);
+		break;
+	default:
+		// Leave null to reset to system cursor
+		break;
+	}
+
+	if (hCursor == NULL) {
+		SystemParametersInfo(SPI_SETCURSORS, 0, nullptr, 0);
+        return;
+	}
+
+	for (int i = 0; i < sizeof(systemCursors) / sizeof(systemCursors[0]); i++) {
+		HCURSOR newCursor = CopyCursor(hCursor);
+		SetSystemCursor(newCursor, systemCursors[i]);
+	}
+}
 
 static BOOL CALLBACK MonitorEnumProc(HMONITOR hMonitor, HDC hdcMonitor, LPRECT lprcMonitor, LPARAM dwData) {
     MonitorSearchData* data = (MonitorSearchData*)dwData;
@@ -296,6 +349,7 @@ void startWindowOperation() {
 
     // Double-click detection for move operation
     if (ctx.operationType == MOVE) {
+        SetGlobalCursor<SIZEALL>();
         auto currentTime = std::chrono::steady_clock::now();
         auto timeSinceLastClick = std::chrono::duration_cast<std::chrono::milliseconds>(currentTime - lastClickTime).count();
 
@@ -305,9 +359,7 @@ void startWindowOperation() {
             GetWindowPlacement(ctx.targetWindow, &wp);
             SetWindowMaximized(ctx.targetWindow, wp.showCmd != SW_MAXIMIZE);
 
-            ctx.inProgress = false;
-            CloseHandle(ctx.hEvent);
-            ctx.hEvent = NULL;
+            stopWindowOperation();
             return;
         }
         lastClickTime = currentTime;
@@ -325,6 +377,7 @@ void startWindowOperation() {
 
 void stopWindowOperation() {
     ctx.inProgress = false;
+	SetGlobalCursor<UNSET>();
     if (ctx.hEvent != NULL) {
         SetEvent(ctx.hEvent);
         CloseHandle(ctx.hEvent);
@@ -366,6 +419,7 @@ DWORD WINAPI WindowOperationThreadProc(LPVOID lpParam) {
     RECT currentWindowRect = ctx.startWindowRect;
 
     if (ctx.operationType == MOVE) {
+        SetGlobalCursor<SIZEALL>();
         // Handle moving
         WINDOWPLACEMENT wp = { sizeof(WINDOWPLACEMENT) };
         GetWindowPlacement(ctx.targetWindow, &wp);
@@ -404,6 +458,15 @@ DWORD WINAPI WindowOperationThreadProc(LPVOID lpParam) {
             isLeft = true;
         if (ctx.startMousePos.y - currentWindowRect.top < windowHeight / 2)
             isTop = true;
+
+		bool nwse = (isLeft && isTop) || (!isLeft && !isTop);
+
+		if (nwse) {
+			SetGlobalCursor<SIZENWSE>();
+		}
+		else {
+			SetGlobalCursor<SIZENESW>();
+		}
 
         while (ctx.inProgress) {
             if (WaitForSingleObject(ctx.hEvent, 0) == WAIT_OBJECT_0) {

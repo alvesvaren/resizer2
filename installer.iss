@@ -7,6 +7,8 @@
 #define MyAppURL "https://github.com/alvesvaren/resizer2"
 #define MyAppExeName "resizer2.exe"
 
+#include "CodeDependencies.iss"
+
 [Setup]
 ; NOTE: The value of AppId uniquely identifies this application. Do not use the same AppId value in installers for other applications.
 ; (To generate a new GUID, click Tools | Generate GUID inside the IDE.)
@@ -56,3 +58,10 @@ Filename: "schtasks"; Parameters: "/Create /TN ""Resizer2"" /TR ""\""{app}\{#MyA
 [UninstallRun]
 Filename: "schtasks"; Parameters: "/Delete /TN ""Resizer2"" /F"; Flags: runhidden; RunOnceId: "autostart-task-remove"
 
+[Code]
+function InitializeSetup: Boolean;
+begin
+  // comment out functions to disable installing them
+  Dependency_AddVC2015To2022;
+  Result := True;
+end;

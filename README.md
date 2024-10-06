@@ -35,6 +35,7 @@ You should be able to uninstall it using the built in uninstallation feature in 
 - Some fullscreen apps really doesn't like being moved to another monitor, so be careful moving fullscreened windows.
 - You can change opacity and move some system bars right now, for example move/resize taskbars on other screens.
   If you accidentally did that, you can restart explorer.exe from task manager and it should fix it.
+- Isn't compiled to target 32-bit windows, if you have a 32-bit computer and want to use this, you'll need to compile it yourself
 
 ## Autostarting:
 

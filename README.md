@@ -4,7 +4,7 @@ Rewrite of https://github.com/IsacEkeroth/ahk-resize-windows in C++
 
 ## Installation:
 
-1. Download the latest version of the installer from https://github.com/alvesvaren/resizer2/releases/
+1. Download the [latest version of the installer](https://github.com/alvesvaren/resizer2/releases/latest/download/resizer2-setup.exe)
 2. Run the installer
 
 > The program is also available as a portable .exe file, which can be ran without installation<br>

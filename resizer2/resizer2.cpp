@@ -1,46 +1,5 @@
 #define OEMRESOURCE
-#include <windows.h>
-#include <iostream>
-#include <chrono>
-
-#pragma comment(lib, "user32.lib")
-
-#define TRAY_ICON_UID 1001
-#define WM_TRAYICON (WM_USER + 1)
-
-
-// Config
-const int DOUBLE_CLICK_THRESHOLD = 300; // ms
-const BYTE MIN_OPACITY = 64;
-const BYTE MAX_OPACITY = 255;
-const BYTE OPACITY_STEP = 26; // Around 10% of 255
-const int DUMMY_KEY = VK_F13; // Any key that doesn't do anything when pressed together with the Windows key
-
-enum ContextType {
-	MOVE,
-	RESIZE
-};
-
-struct Context {
-	bool inProgress = false;
-	HANDLE hEvent = NULL;
-	POINT startMousePos;
-	RECT startWindowRect;
-	HWND targetWindow = NULL;
-	ContextType operationType;
-};
-
-struct MonitorSearchData {
-	int x, y;
-	HMONITOR hMonitor;
-};
-
-enum ResizerCursor {
-	SIZEALL,
-	SIZENWSE,
-	SIZENESW,
-	UNSET,
-};
+#include "resizer2.h"
 
 const int systemCursors[] = {
 	OCR_NORMAL,
@@ -66,17 +25,6 @@ bool didUseWindowsKey = false;
 bool shouldMinimize = false;
 std::chrono::steady_clock::time_point lastClickTime;
 NOTIFYICONDATA nid;
-
-LRESULT CALLBACK LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lParam);
-LRESULT CALLBACK LowLevelMouseProc(int nCode, WPARAM wParam, LPARAM lParam);
-DWORD WINAPI WindowOperationThreadProc(LPVOID lpParam);
-
-void adjustWindowOpacity(int change);
-
-void minimizeWindow();
-template <ContextType type>
-void startWindowOperation();
-void stopWindowOperation();
 
 static HWND getTopLevelParent(HWND hwnd) {
 	HWND parent = hwnd;
@@ -207,6 +155,13 @@ static HMONITOR SysGetMonitorContainingPoint(int x, int y) {
 
 int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine, int nCmdShow) {
 	const wchar_t CLASS_NAME[] = L"TrayIconWindowClass";
+
+	// Both for the uninstaller, and to prevent multiple instances
+	HANDLE hMutexHandle = CreateMutex(NULL, FALSE, L"Resizer2Mutex");
+	if (GetLastError() == ERROR_ALREADY_EXISTS) {
+		MessageBox(NULL, L"Resizer is already running!", L"Resizer", MB_ICONINFORMATION | MB_OK);
+		return 0;
+	}
 
 	WNDCLASS wc = {};
 	wc.lpfnWndProc = WindowProc;

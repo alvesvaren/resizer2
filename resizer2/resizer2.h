@@ -2,6 +2,7 @@
 
 #include <windows.h>
 #include <iostream>
+#include <array>
 #include <chrono>
 
 #pragma comment(lib, "user32.lib")
@@ -42,8 +43,8 @@ enum ResizerCursor {
     UNSET,
 };
 
-// Declarations
-extern const int systemCursors[];
+// List of all system cursors that can be set
+extern const std::array<int, 13> systemCursors;
 
 extern Context ctx;
 extern HHOOK hKeyboardHook;

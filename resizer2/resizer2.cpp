@@ -1,21 +1,21 @@
 #define OEMRESOURCE
 #include "resizer2.h"
 
-const int systemCursors[] = {
-	OCR_NORMAL,
-	OCR_IBEAM,
-	OCR_WAIT,
-	OCR_CROSS,
-	OCR_UP,
-	OCR_SIZENWSE,
-	OCR_SIZENESW,
-	OCR_SIZEWE,
-	OCR_SIZENS,
-	OCR_SIZEALL,
-	OCR_NO,
-	OCR_HAND,
-	OCR_APPSTARTING,
-};
+const std::array<int, 13> systemCursors{{
+    OCR_NORMAL,
+    OCR_IBEAM,
+    OCR_WAIT,
+    OCR_CROSS,
+    OCR_UP,
+    OCR_SIZENWSE,
+    OCR_SIZENESW,
+    OCR_SIZEWE,
+    OCR_SIZENS,
+    OCR_SIZEALL,
+    OCR_NO,
+    OCR_HAND,
+    OCR_APPSTARTING,
+}};
 
 Context ctx;
 HHOOK hKeyboardHook = NULL;
@@ -85,9 +85,9 @@ void SetGlobalCursor() {
 		return;
 	}
 
-	for (int i = 0; i < sizeof(systemCursors) / sizeof(systemCursors[0]); i++) {
+	for (auto cursor : systemCursors) {
 		HCURSOR newCursor = CopyCursor(hCursor);
-		SetSystemCursor(newCursor, systemCursors[i]);
+		SetSystemCursor(newCursor, cursor);
 	}
 }
 

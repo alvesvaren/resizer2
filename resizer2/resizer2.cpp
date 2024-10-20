@@ -361,6 +361,18 @@ void startWindowOperation() {
 
 	ctx.targetWindow = getTopLevelParent(ctx.targetWindow);
 
+	LPTSTR className = new TCHAR[256];
+	GetClassName(ctx.targetWindow, className, 256);
+
+	std::string str{ static_cast<std::string>(CT2A(className)) };
+
+	if (disallowedClasses.count(str) > 0) {
+		ctx.inProgress = false;
+		CloseHandle(ctx.hEvent);
+		ctx.hEvent = NULL;
+		return;
+	}
+
 	// Double-click for toggle maximize
 	if (ctx.operationType == MOVE) {
 		SetGlobalCursor<SIZEALL>();

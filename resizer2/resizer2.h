@@ -4,6 +4,9 @@
 #include <iostream>
 #include <array>
 #include <chrono>
+#include <unordered_set>
+#include <atlbase.h>
+#include <string>
 
 #pragma comment(lib, "user32.lib")
 
@@ -16,6 +19,11 @@ const BYTE MIN_OPACITY = 64;
 const BYTE MAX_OPACITY = 255;
 const BYTE OPACITY_STEP = 26; // Around 10% of 255
 const int DUMMY_KEY = VK_F13; // Any key that doesn't do anything when pressed together with the Windows key
+
+const std::unordered_set<std::string> disallowedClasses{
+    "Shell_TrayWnd",
+    "Progman",
+};
 
 enum ContextType {
     MOVE,

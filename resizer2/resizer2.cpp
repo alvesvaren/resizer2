@@ -62,6 +62,19 @@ static void snapToMonitor(HWND window, HMONITOR screen) {
 	ShowWindow(window, SW_MAXIMIZE);
 }
 
+static bool isWindowAllowed(HWND win) {
+	LPTSTR className = new TCHAR[256];
+	GetClassName(win, className, 256);
+
+	std::string str{ static_cast<std::string>(CT2A(className)) };
+
+	if (disallowedClasses.count(str) > 0) {
+		return false;
+	}
+
+	return true;
+}
+
 template <ResizerCursor cursor>
 void SetGlobalCursor() {
 	HCURSOR hCursor = NULL;
@@ -313,19 +326,22 @@ void adjustWindowOpacity(int change) {
 	POINT pt;
 	GetCursorPos(&pt);
 	HWND hwnd = getTopLevelParent(WindowFromPoint(pt));
-	if (hwnd != NULL) {
-		BYTE currentOpacity = MAX_OPACITY;
-		LONG_PTR exStyle = GetWindowLongPtr(hwnd, GWL_EXSTYLE);
-		if (exStyle & WS_EX_LAYERED) {
-			BYTE alpha;
-			DWORD flags;
-			GetLayeredWindowAttributes(hwnd, NULL, &alpha, &flags);
-			currentOpacity = alpha;
-		}
-		int newOpacity = max(MIN_OPACITY, min(MAX_OPACITY, currentOpacity + change));
-		SetWindowLongPtr(hwnd, GWL_EXSTYLE, exStyle | WS_EX_LAYERED);
-		SetLayeredWindowAttributes(hwnd, 0, (BYTE)newOpacity, LWA_ALPHA);
+
+	if ((hwnd == NULL) || !isWindowAllowed(hwnd)) {
+		return;
 	}
+
+	BYTE currentOpacity = MAX_OPACITY;
+	LONG_PTR exStyle = GetWindowLongPtr(hwnd, GWL_EXSTYLE);
+	if (exStyle & WS_EX_LAYERED) {
+		BYTE alpha;
+		DWORD flags;
+		GetLayeredWindowAttributes(hwnd, NULL, &alpha, &flags);
+		currentOpacity = alpha;
+	}
+	int newOpacity = max(MIN_OPACITY, min(MAX_OPACITY, currentOpacity + change));
+	SetWindowLongPtr(hwnd, GWL_EXSTYLE, exStyle | WS_EX_LAYERED);
+	SetLayeredWindowAttributes(hwnd, 0, (BYTE)newOpacity, LWA_ALPHA);
 }
 
 void minimizeWindow() {
@@ -333,9 +349,12 @@ void minimizeWindow() {
 	GetCursorPos(&pt);
 	HWND hwnd = WindowFromPoint(pt);
 	hwnd = getTopLevelParent(hwnd);
-	if (hwnd != NULL) {
-		ShowWindow(hwnd, SW_MINIMIZE);
+
+	if (hwnd == NULL || !isWindowAllowed(hwnd)) {
+		return;
 	}
+
+	ShowWindow(hwnd, SW_MINIMIZE);
 }
 
 template<ContextType type>
@@ -350,23 +369,9 @@ void startWindowOperation() {
 	}
 
 	GetCursorPos(&ctx.startMousePos);
-	ctx.targetWindow = WindowFromPoint(ctx.startMousePos);
+	ctx.targetWindow = getTopLevelParent(WindowFromPoint(ctx.startMousePos));
 
-	if (ctx.targetWindow == NULL) {
-		ctx.inProgress = false;
-		CloseHandle(ctx.hEvent);
-		ctx.hEvent = NULL;
-		return;
-	}
-
-	ctx.targetWindow = getTopLevelParent(ctx.targetWindow);
-
-	LPTSTR className = new TCHAR[256];
-	GetClassName(ctx.targetWindow, className, 256);
-
-	std::string str{ static_cast<std::string>(CT2A(className)) };
-
-	if (disallowedClasses.count(str) > 0) {
+	if (ctx.targetWindow == NULL || !isWindowAllowed(ctx.targetWindow)) {
 		ctx.inProgress = false;
 		CloseHandle(ctx.hEvent);
 		ctx.hEvent = NULL;

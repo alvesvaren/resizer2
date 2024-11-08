@@ -23,6 +23,7 @@ const int DUMMY_KEY = VK_F13; // Any key that doesn't do anything when pressed t
 const std::unordered_set<std::string> disallowedClasses{
     "Shell_TrayWnd",
     "Progman",
+	"WorkerW",
 };
 
 enum ContextType {

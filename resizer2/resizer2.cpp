@@ -120,6 +120,11 @@ static void RemoveTrayIcon() {
 }
 
 LRESULT CALLBACK WindowProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
+	if (uMsg == WM_TASKBARCREATED) {
+		AddTrayIcon(hWnd);
+		return 0;
+	}
+
 	switch (uMsg) {
 	case WM_TRAYICON:
 		if (lParam == WM_LBUTTONDOWN || lParam == WM_RBUTTONDOWN) {
@@ -190,6 +195,8 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine
 	if (hWnd == NULL) {
 		return 0;
 	}
+
+	WM_TASKBARCREATED = RegisterWindowMessage(TEXT("TaskbarCreated"));
 
 	AddTrayIcon(hWnd);
 

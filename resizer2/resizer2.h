@@ -21,6 +21,13 @@ const BYTE OPACITY_STEP = 26; // Around 10% of 255
 const int DUMMY_KEY = VK_F13; // Any key that doesn't do anything when pressed together with the Windows key
 
 const std::unordered_set<std::string> disallowedClasses{
+    "ControlCenterWindow",
+    "TopLevelWindowForOverflowXamlIsland",
+    "XamlExplorerHostIslandWindow",
+    "Windows.UI.Core.CoreWindow",
+    "Shell_InputSwitchDismissOverlay",
+    "Shell_InputSwitchTopLevelWindow",
+    "Shell_SecondaryTrayWnd",
     "Shell_TrayWnd",
     "Progman",
 	"WorkerW",

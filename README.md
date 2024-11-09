@@ -7,12 +7,13 @@ Rewrite of https://github.com/IsacEkeroth/ahk-resize-windows in C++
 1. Download the [latest version of the installer](https://github.com/alvesvaren/resizer2/releases/latest/download/resizer2-setup.exe)
 2. Run the installer
 
-> The program is also available as a portable .exe file, which can be ran without installation<br>
-> However, autostarting is not automatically set up unless you use the installer
+> The program is also available as a portable .exe file, which can be ran without installation<br><br>
+> However, autostarting is not automatically set up unless you use the installer,<br>
+> and it doesn't allow you to move system windows unless started as administrator
 
-## Uninstalling:
+## Demo
 
-You should be able to uninstall it using the built in uninstallation feature in windows. You will need to close the app before proceeding (in the system tray)
+![resizer-demo](https://github.com/user-attachments/assets/b1eb583f-3b3b-413b-b7a4-c431f06baee0)
 
 ## How to use:
 
@@ -21,6 +22,11 @@ You should be able to uninstall it using the built in uninstallation feature in 
 - Win + Scroll Up/Down to change window opacity
 - Win + Middle mouse to minimize a window
 - Win + Double click Left Mouse Button to maximize/restore a window
+
+## Updating
+
+- Stop the resizer2.exe file either from task manager or the system tray
+- Download and start the updated installer from github
 
 ## Extra features:
 
@@ -41,3 +47,7 @@ You should be able to uninstall it using the built in uninstallation feature in 
 ## Autostarting:
 
 When installing using the setup program, you can choose to enable autostarting
+
+## Uninstalling:
+
+You should be able to uninstall it using the built in uninstallation feature in windows. You will need to close the app before proceeding (in the system tray, or in task manager if it doesn't show up there)

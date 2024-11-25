@@ -1,5 +1,7 @@
 # resizer2
 
+Resize and move windows like in KDE/i3 on Windows with Win+Mouse!
+
 Rewrite of https://github.com/IsacEkeroth/ahk-resize-windows in C++
 
 ## Installation:

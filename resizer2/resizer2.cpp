@@ -223,6 +223,10 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine
 LRESULT CALLBACK LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lParam) {
 	KBDLLHOOKSTRUCT* pKbDllHookStruct = (KBDLLHOOKSTRUCT*)lParam;
 	if (nCode == HC_ACTION) {
+		if (modKeyPressed && (GetAsyncKeyState(VK_LWIN) & 0x8000) == 0) {
+			modKeyPressed = false;
+		}
+
 		if (pKbDllHookStruct->vkCode == VK_LWIN && pKbDllHookStruct->flags) {
 			if (wParam == WM_KEYDOWN || wParam == WM_SYSKEYDOWN) {
 				if (!modKeyPressed) {
@@ -257,6 +261,10 @@ LRESULT CALLBACK LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lParam) {
 LRESULT CALLBACK LowLevelMouseProc(int nCode, WPARAM wParam, LPARAM lParam) {
 	MSLLHOOKSTRUCT* pMsLlHookStruct = (MSLLHOOKSTRUCT*)lParam;
 	if (nCode == HC_ACTION) {
+		if (modKeyPressed && (GetAsyncKeyState(VK_LWIN) & 0x8000) == 0) {
+			modKeyPressed = false;
+		}
+
 		switch (wParam) {
 		case WM_MOUSEWHEEL: {
 			if (modKeyPressed) {

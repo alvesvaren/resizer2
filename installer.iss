@@ -2,7 +2,7 @@
 ; SEE THE DOCUMENTATION FOR DETAILS ON CREATING INNO SETUP SCRIPT FILES!
 
 #define MyAppName "Resizer 2"
-#define MyAppVersion "8"
+#define MyAppVersion "1.0.9"
 #define MyAppPublisher "Alve Svarén"
 #define MyAppURL "https://github.com/alvesvaren/resizer2"
 #define MyAppExeName "resizer2-portable.exe"
@@ -20,6 +20,7 @@ AppPublisherURL={#MyAppURL}
 AppSupportURL={#MyAppURL}
 AppUpdatesURL={#MyAppURL}
 DefaultDirName={autopf}\Resizer2
+LicenseFile=LICENSE.txt
 ; "ArchitecturesAllowed=x64compatible" specifies that Setup cannot run
 ; on anything but x64 and Windows 11 on Arm.
 ArchitecturesAllowed=x64compatible
@@ -34,8 +35,7 @@ AllowNoIcons=yes
 ; Uncomment the following line to run in non administrative install mode (install for current user only.)
 ;PrivilegesRequired=lowest
 OutputBaseFilename=resizer2-setup
-Compression=lzma
-SolidCompression=yes
+Compression=zip
 WizardStyle=modern
 
 [Languages]
@@ -46,6 +46,7 @@ Name: "autostart"; Description: "Start Resizer 2 (as administrator) automaticall
 
 [Files]
 Source: "C:\Users\alve\source\repos\resizer2\x64\Release\{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversion
+Source: "C:\Users\alve\source\repos\resizer2\LICENSE.txt"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
 Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"

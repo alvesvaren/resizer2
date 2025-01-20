@@ -35,6 +35,21 @@ static HWND getTopLevelParent(HWND hwnd) {
 	return parent;
 }
 
+template <ContextType type>
+static void moveWindow(HWND hwnd, RECT rect, bool async = true) {
+	UINT resizeFlags = SWP_NOZORDER | SWP_NOSENDCHANGING | SWP_DEFERERASE;
+	UINT moveFlags =  resizeFlags | SWP_NOSIZE | SWP_NOREDRAW | SWP_NOCOPYBITS;
+	SetWindowPos(hwnd, NULL, rect.left, rect.top, rect.right - rect.left, rect.bottom - rect.top, (type == MOVE ? moveFlags : resizeFlags) | (async ? SWP_ASYNCWINDOWPOS : 0));
+}
+
+static void adjustRect(HWND win, RECT& rect) {
+	LONG style = GetWindowLong(win, GWL_STYLE);
+	LONG styleEx = GetWindowLong(win, GWL_EXSTYLE);
+
+	AdjustWindowRectEx(&rect, style, FALSE, styleEx);
+}
+
+
 static void snapToMonitor(HWND window, HMONITOR screen) {
 	MONITORINFO info{};
 	info.cbSize = sizeof(MONITORINFO);
@@ -55,12 +70,129 @@ static void snapToMonitor(HWND window, HMONITOR screen) {
 	// Calculate the new position (center of the new screen)
 	int width = wp.rcNormalPosition.right - wp.rcNormalPosition.left;
 	int height = wp.rcNormalPosition.bottom - wp.rcNormalPosition.top;
+	
 	int x = rect.left + (rect.right - rect.left - width) / 2;
 	int y = rect.top + (rect.bottom - rect.top - height) / 2;
-
+	
 	MoveWindow(window, x, y, width, height, TRUE);
 	ShowWindow(window, SW_MAXIMIZE);
 }
+
+static void snapToFancyZone(HWND hWnd, HMONITOR hMon, POINT mousePos, bool maximized)
+{
+	// 1) Get the monitor's work area.
+	MONITORINFO mi{};
+	mi.cbSize = sizeof(mi);
+	if (!GetMonitorInfo(hMon, &mi)) return;
+
+	int monWidth = mi.rcWork.right - mi.rcWork.left;
+	int monHeight = mi.rcWork.bottom - mi.rcWork.top;
+
+	// 2) Compute corners, center, arcs, etc.
+
+	// Monitor top-left corner in screen coords:
+	POINT tlCorner = { mi.rcWork.left,  mi.rcWork.top };
+	// top-right corner:
+	POINT trCorner = { mi.rcWork.right, mi.rcWork.top };
+	// bottom-left corner:
+	POINT blCorner = { mi.rcWork.left,  mi.rcWork.bottom };
+	// bottom-right corner:
+	POINT brCorner = { mi.rcWork.right, mi.rcWork.bottom };
+
+	// Radius for arcs (1/3 of whichever dimension you like)
+	double radius = CORNER_RADIUS_FRACTION * min(monWidth, monHeight);
+
+	// We'll compute distance from corners:
+	auto dist = [](POINT a, POINT b) {
+		double dx = double(a.x - b.x);
+		double dy = double(a.y - b.y);
+		return sqrt(dx * dx + dy * dy);
+		};
+
+	double distTL = dist(mousePos, tlCorner);
+	double distTR = dist(mousePos, trCorner);
+	double distBL = dist(mousePos, blCorner);
+	double distBR = dist(mousePos, brCorner);
+
+
+	int centerX = mi.rcWork.left + monWidth / 2;
+	int centerY = mi.rcWork.top + monHeight / 2;
+
+	if (maximized) {
+		ShowWindow(hWnd, SW_RESTORE);
+	}
+
+	RECT newRect = mi.rcWork;
+	bool shouldMove = false;
+
+
+	// 3) Check if we're inside any corner circle
+	if (distTL <= radius) {
+		// Snap top-left quadrant
+		newRect.right -= monWidth / 2;
+		newRect.bottom -= monHeight / 2;
+		shouldMove = true;
+	}
+	else if (distTR <= radius) {
+		// Snap top-right quadrant
+		newRect.left += monWidth / 2;
+		newRect.bottom -= monHeight / 2;
+		shouldMove = true;
+	}
+	else if (distBL <= radius) {
+		// Snap bottom-left quadrant
+		newRect.right -= monWidth / 2;
+		newRect.top += monHeight / 2;
+		shouldMove = true;
+	}
+	else if (distBR <= radius) {
+		// Snap bottom-right quadrant
+		newRect.left += monWidth / 2;
+		newRect.top += monHeight / 2;
+		shouldMove = true;
+	}
+	else {
+		int oneThirdY = mi.rcWork.top + (monHeight / 3);
+		int twoThirdY = mi.rcWork.top + 2 * (monHeight / 3);
+
+		if ((mousePos.y > oneThirdY) && (mousePos.y < twoThirdY))
+		{
+			// Snap left or right half
+			if (mousePos.x < centerX) {
+				newRect.right -= monWidth / 2;
+			}
+			else {
+				newRect.left += monWidth / 2;
+			}
+			shouldMove = true;
+		}
+
+		// 6) Top/Bottom half:
+		int oneThirdX = mi.rcWork.left + (monWidth / 3);
+		int twoThirdX = mi.rcWork.left + 2 * (monWidth / 3);
+
+		if ((mousePos.x > oneThirdX) && (mousePos.x < twoThirdX))
+		{
+			if (mousePos.y < centerY) {
+				// top half
+				newRect.bottom -= monHeight / 2;
+			}
+			else {
+				// bottom half
+				newRect.top += monHeight / 2;
+			}
+			shouldMove = true;
+		}
+	}
+	
+	if (shouldMove) {
+		adjustRect(hWnd, newRect);
+		moveWindow<RESIZE>(hWnd, newRect);
+	}
+
+	// If we get here, we didn't trigger any fancy zone, so do nothing special.
+}
+
 
 static bool isWindowAllowed(HWND win) {
 	LPTSTR className = new TCHAR[256];
@@ -435,33 +567,73 @@ DWORD WINAPI WindowOperationThreadProc(LPVOID lpParam) {
 	if (ctx.operationType == MOVE) {
 		SetGlobalCursor<SIZEALL>();
 		WINDOWPLACEMENT wp = { sizeof(WINDOWPLACEMENT) };
-		GetWindowPlacement(ctx.targetWindow, &wp);
-		bool maximized = wp.showCmd == SW_MAXIMIZE;
+		POINT pt;
+		bool wasShiftDown = false;
 
 		while (ctx.inProgress) {
 			if (WaitForSingleObject(ctx.hEvent, 0) == WAIT_OBJECT_0) {
 				break;
 			}
 
-			POINT pt;
+			GetWindowPlacement(ctx.targetWindow, &wp);
+			bool maximized = (wp.showCmd == SW_MAXIMIZE);
+
 			GetCursorPos(&pt);
+
 			int dx = pt.x - ctx.startMousePos.x;
 			int dy = pt.y - ctx.startMousePos.y;
 
-			if (maximized) {
+			// Check SHIFT
+			bool shiftDown = (GetAsyncKeyState(VK_SHIFT) & 0x8000) != 0;
+
+			// If SHIFT is down, we want to force-restore a maximized window
+			if (shiftDown) {
+				wasShiftDown = true;
+				// If window currently maximized, un-maximize it so we can do a "normal" snap
+				if (maximized) {
+					// Update our tracking rect to the newly-restored size
+					GetWindowRect(ctx.targetWindow, &currentWindowRect);
+				}
+
+				// SHIFT is pressed => do fancy zones
 				HMONITOR screen = SysGetMonitorContainingPoint(pt.x, pt.y);
-				snapToMonitor(ctx.targetWindow, screen);
+				snapToFancyZone(ctx.targetWindow, screen, pt, maximized);
 			}
 			else {
-				MoveWindow(ctx.targetWindow,
-					currentWindowRect.left + dx, currentWindowRect.top + dy,
-					currentWindowRect.right - currentWindowRect.left,
-					currentWindowRect.bottom - currentWindowRect.top, TRUE);
+				if (wasShiftDown) {
+					wasShiftDown = false;
+					RECT newRect = ctx.startWindowRect;
+					OffsetRect(&newRect, dx, dy);
+					moveWindow<RESIZE>(ctx.targetWindow, newRect);
+
+				}
+				// SHIFT is not pressed:
+				if (maximized) {
+					//
+					// Option A: Just re-snap to the monitor so user can 
+					// "drag" the window across monitors even while maximized
+					// (This is what your old code does.)
+					//
+					HMONITOR screen = SysGetMonitorContainingPoint(pt.x, pt.y);
+					snapToMonitor(ctx.targetWindow, screen);
+				}
+				else {
+					RECT rect = currentWindowRect;
+
+
+					rect.left += dx;
+					rect.right += dx;
+					rect.top += dy;
+					rect.bottom += dy;
+
+					moveWindow<MOVE>(ctx.targetWindow, rect);
+				}
 			}
 
-			Sleep(1);
+			 Sleep(1);
 		}
 	}
+
 	else if (ctx.operationType == RESIZE) {
 		bool isLeft = false, isTop = false;
 		int windowWidth = currentWindowRect.right - currentWindowRect.left;
@@ -512,8 +684,7 @@ DWORD WINAPI WindowOperationThreadProc(LPVOID lpParam) {
 				newRect.bottom += dy;
 			}
 
-			MoveWindow(ctx.targetWindow, newRect.left, newRect.top,
-				newRect.right - newRect.left, newRect.bottom - newRect.top, TRUE);
+			moveWindow<RESIZE>(ctx.targetWindow, newRect, false);
 
 			Sleep(1);
 		}
@@ -522,3 +693,4 @@ DWORD WINAPI WindowOperationThreadProc(LPVOID lpParam) {
 	ctx.inProgress = false;
 	return 0;
 }
+gg

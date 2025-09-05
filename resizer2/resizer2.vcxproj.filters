@@ -18,9 +18,27 @@
     <ClCompile Include="resizer2.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="window_ops.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="hooks.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="tray.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="state.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="operations.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="resizer2.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="window_ops.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

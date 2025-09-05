@@ -10,8 +10,8 @@ Rewrite of https://github.com/IsacEkeroth/ahk-resize-windows in C++
 2. Run the installer
 
 > The program is also available as a portable .exe file, which can be ran without installation<br><br>
-> However, autostarting is not automatically set up unless you use the installer,<br>
-> and it doesn't allow you to move system windows unless started as administrator
+> However, auto starting is not automatically set up unless you use the installer,<br>
+> and it doesn't allow you to move system windows unless running as administrator
 
 ## Demo
 
@@ -20,6 +20,8 @@ Rewrite of https://github.com/IsacEkeroth/ahk-resize-windows in C++
 ## How to use:
 
 - Win + Left Mouse Button to move windows. If a window is fullscreened or maximized, it will snap between monitors
+- Win + Shift + Left Mouse Button to snap windows. 
+  You can snap windows to each quadrant of the screen, or each half of the screen. Move the mouse close to the zone you want to snap to!
 - Win + Right Mouse Button to resize windows from the closest corner
 - Win + Scroll Up/Down to change window opacity
 - Win + Middle mouse to minimize a window
@@ -37,20 +39,16 @@ Rewrite of https://github.com/IsacEkeroth/ahk-resize-windows in C++
 
 ## Quirks:
 
-- When you normally press Win, the start menu appears, unless you pressed a keyboard shortcut using it.
-  So to keep it from appearing, it fakes the combination Win+F13, which usually doesn't do anything.
-  However, if you have any hotkeys using F13 that get triggered by this program, you might need to change them or change the key used in this program (by compiling it yourself)
-- The program needs to run as administrator in order to support system windows, such as the task manager. If you do not like this, you can disable it in the task scheduler or by running the portable version yourself.
+- To not make the start menu appear, it fakes the combination Win+F13, which usually doesn't do anything, but might conflict with other hotkeys you have set up.
+- It needs to run as administrator to work for system windows (such as the task manager), if you don't want this, use the portable version.
 - Some fullscreen apps really doesn't like being moved to another monitor, so be careful moving fullscreened windows.
-- Only supports x64, if you're on a 32-bit machine, you'll need to compile it yourself. Arm64 should work with emulation but isn't tested.
-- Tested on windows 11, should for the most part work fine on windows 10 too, but there might be more bugs.
-- It always moves the parent window, but some apps uses child windows incorrectly which makes it impossible to move them correctly using this.
-- Sometimes the tray icon doesn't work when starting it before explorer.exe has started. If you need to close it, use task manager or the task scheduler instead.
+- Only precompiled to x64, but should work on arm64 with emulation. 32-bit might work if you compile it yourself!
+- It moves the parent window, but some apps are coded incorrectly which breaks this.
 
 ## Autostarting:
 
-When installing using the setup program, you can choose to enable autostarting (default)
+When installing using the setup program, you can choose to enable auto starting (default)
 
 ## Uninstalling:
 
-You should be able to uninstall it using the built in uninstallation feature in windows. You will need to close the app before proceeding (in the system tray, or in task manager if it doesn't show up there)
+You can uninstall it using the built in uninstallation feature in windows. You will need to close the app before proceeding (in the system tray or task manager)

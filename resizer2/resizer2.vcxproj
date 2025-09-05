@@ -148,9 +148,15 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="resizer2.cpp" />
+    <ClCompile Include="window_ops.cpp" />
+    <ClCompile Include="hooks.cpp" />
+    <ClCompile Include="tray.cpp" />
+    <ClCompile Include="state.cpp" />
+    <ClCompile Include="operations.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="resizer2.h" />
+    <ClInclude Include="window_ops.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

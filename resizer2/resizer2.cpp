@@ -1,17 +1,6 @@
 #define OEMRESOURCE
 #include "resizer2.h"
 
-static void DebugLog(const wchar_t* message) {
-	OutputDebugStringW(message);
-	OutputDebugStringW(L"\n");
-}
-static void DebugLogFmt(const wchar_t* prefix, WPARAM wParam, LPARAM lParam) {
-	wchar_t buf[256];
-	swprintf(buf, 256, L"%s wParam=%llu lParam=%lld", prefix, (unsigned long long)wParam, (long long)lParam);
-	OutputDebugStringW(buf);
-	OutputDebugStringW(L"\n");
-}
-
 const std::array<int, 13> systemCursors{{
     OCR_NORMAL,
     OCR_IBEAM,
@@ -284,17 +273,12 @@ static void AddTrayIcon(HWND hWnd) {
 	HICON smallIcon = (HICON)LoadImage(NULL, IDI_APPLICATION, IMAGE_ICON, GetSystemMetrics(SM_CXSMICON), GetSystemMetrics(SM_CYSMICON), LR_SHARED);
 	nid.hIcon = smallIcon ? smallIcon : LoadIcon(NULL, IDI_APPLICATION);
 	lstrcpy(nid.szTip, TEXT("Resizer"));  // Tray icon tooltip
-	// Debug info
-	wchar_t dbg[256];
-	swprintf(dbg, 256, L"Adding tray icon: hwnd=0x%p id=%u msg=0x%X", nid.hWnd, (unsigned)nid.uID, (unsigned)nid.uCallbackMessage);
-	DebugLog(dbg);
 	BOOL addOk = Shell_NotifyIcon(NIM_ADD, &nid);
 	if (addOk) {
 		g_trayIconAdded = true;
-		DebugLog(L"Tray icon added successfully");
 	}
 	else {
-		DebugLog(L"Tray icon add FAILED");
+		// Ignore; retry via timer
 	}
 }
 
@@ -340,15 +324,7 @@ LRESULT CALLBACK WindowProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
 		}
 		break;
 	case WM_TRAYICON:
-		DebugLogFmt(L"WM_TRAYICON received", wParam, lParam);
-		if (lParam == WM_RBUTTONUP || lParam == WM_CONTEXTMENU || lParam == WM_LBUTTONUP || lParam == WM_RBUTTONDOWN || lParam == WM_LBUTTONDOWN
-#ifdef NIN_SELECT
-			|| lParam == NIN_SELECT
-#endif
-#ifdef NIN_KEYSELECT
-			|| lParam == NIN_KEYSELECT
-#endif
-			) {
+		if (lParam == WM_RBUTTONUP || lParam == WM_CONTEXTMENU) {
 			ShowTrayMenu(hWnd);
 		}
 		break;

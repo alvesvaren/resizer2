@@ -1,6 +1,17 @@
 #define OEMRESOURCE
 #include "resizer2.h"
 
+static void DebugLog(const wchar_t* message) {
+	OutputDebugStringW(message);
+	OutputDebugStringW(L"\n");
+}
+static void DebugLogFmt(const wchar_t* prefix, WPARAM wParam, LPARAM lParam) {
+	wchar_t buf[256];
+	swprintf(buf, 256, L"%s wParam=%llu lParam=%lld", prefix, (unsigned long long)wParam, (long long)lParam);
+	OutputDebugStringW(buf);
+	OutputDebugStringW(L"\n");
+}
+
 const std::array<int, 13> systemCursors{{
     OCR_NORMAL,
     OCR_IBEAM,
@@ -25,6 +36,21 @@ bool didUseWindowsKey = false;
 bool shouldMinimize = false;
 std::chrono::steady_clock::time_point lastClickTime;
 NOTIFYICONDATA nid;
+static bool g_trayIconAdded = false;
+static bool g_hooksInstalled = false;
+static const UINT RETRY_TIMER_ID = 1;
+static const UINT RETRY_INTERVAL_MS = 2000; // ms
+static const UINT ID_TRAY_EXIT = 0x5001;
+static HWND g_hMainWnd = NULL;
+
+static bool IsExplorerReady() {
+	return FindWindow(L"Shell_TrayWnd", NULL) != NULL;
+}
+
+static void EnsureHooksInstalled();
+static void TryInitialize(HWND hWnd);
+static void ShowTrayMenu(HWND hWnd);
+static void EnsureMessageFilter(HWND hWnd);
 
 static HWND getTopLevelParent(HWND hwnd) {
 	HWND parent = hwnd;
@@ -237,36 +263,99 @@ void SetGlobalCursor() {
 }
 
 static void AddTrayIcon(HWND hWnd) {
+	if (g_trayIconAdded) {
+		return;
+	}
+	if (!IsExplorerReady()) {
+		return;
+	}
+
+	ZeroMemory(&nid, sizeof(nid));
 	nid.cbSize = sizeof(NOTIFYICONDATA);
 	nid.hWnd = hWnd;
 	nid.uID = TRAY_ICON_UID;
-	nid.uFlags = NIF_MESSAGE | NIF_ICON | NIF_TIP;
+	nid.uFlags = NIF_MESSAGE | NIF_ICON | NIF_TIP
+#ifdef NIF_SHOWTIP
+		| NIF_SHOWTIP
+#endif
+		;
 	nid.uCallbackMessage = WM_TRAYICON;  // Message for tray icon interaction
-	nid.hIcon = LoadIcon(NULL, IDI_APPLICATION);  // Use default application icon
-	lstrcpy(nid.szTip, TEXT("Resizer (click to exit)"));  // Tray icon tooltip
-	Shell_NotifyIcon(NIM_ADD, &nid);
+	// Load a small shared icon for better shell behavior
+	HICON smallIcon = (HICON)LoadImage(NULL, IDI_APPLICATION, IMAGE_ICON, GetSystemMetrics(SM_CXSMICON), GetSystemMetrics(SM_CYSMICON), LR_SHARED);
+	nid.hIcon = smallIcon ? smallIcon : LoadIcon(NULL, IDI_APPLICATION);
+	lstrcpy(nid.szTip, TEXT("Resizer"));  // Tray icon tooltip
+	// Debug info
+	wchar_t dbg[256];
+	swprintf(dbg, 256, L"Adding tray icon: hwnd=0x%p id=%u msg=0x%X", nid.hWnd, (unsigned)nid.uID, (unsigned)nid.uCallbackMessage);
+	DebugLog(dbg);
+	BOOL addOk = Shell_NotifyIcon(NIM_ADD, &nid);
+	if (addOk) {
+		g_trayIconAdded = true;
+		DebugLog(L"Tray icon added successfully");
+	}
+	else {
+		DebugLog(L"Tray icon add FAILED");
+	}
 }
 
 static void RemoveTrayIcon() {
-	Shell_NotifyIcon(NIM_DELETE, &nid);
+	if (g_trayIconAdded) {
+		Shell_NotifyIcon(NIM_DELETE, &nid);
+		g_trayIconAdded = false;
+	}
 }
 
 LRESULT CALLBACK WindowProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
 	if (uMsg == WM_TASKBARCREATED) {
+		g_trayIconAdded = false; // taskbar recreated; force re-add
 		AddTrayIcon(hWnd);
 		return 0;
 	}
 
 	switch (uMsg) {
-	case WM_TRAYICON:
-		if (lParam == WM_LBUTTONDOWN || lParam == WM_RBUTTONDOWN) {
-			// Exit the program when the tray icon is clicked
+	case WM_COMMAND:
+		if (LOWORD(wParam) == ID_TRAY_EXIT) {
 			PostQuitMessage(0);
+			return 0;
+		}
+		break;
+	case WM_WTSSESSION_CHANGE:
+		// React to user logon/unlock/console connect by retrying initialization
+		switch (wParam) {
+		case WTS_SESSION_LOGON:
+		case WTS_SESSION_UNLOCK:
+		case WTS_CONSOLE_CONNECT:
+			TryInitialize(hWnd);
+			break;
+		default:
+			break;
+		}
+		break;
+	case WM_TIMER:
+		if (wParam == RETRY_TIMER_ID) {
+			TryInitialize(hWnd);
+			if (g_hooksInstalled && g_trayIconAdded) {
+				KillTimer(hWnd, RETRY_TIMER_ID);
+			}
+		}
+		break;
+	case WM_TRAYICON:
+		DebugLogFmt(L"WM_TRAYICON received", wParam, lParam);
+		if (lParam == WM_RBUTTONUP || lParam == WM_CONTEXTMENU || lParam == WM_LBUTTONUP || lParam == WM_RBUTTONDOWN || lParam == WM_LBUTTONDOWN
+#ifdef NIN_SELECT
+			|| lParam == NIN_SELECT
+#endif
+#ifdef NIN_KEYSELECT
+			|| lParam == NIN_KEYSELECT
+#endif
+			) {
+			ShowTrayMenu(hWnd);
 		}
 		break;
 
 	case WM_DESTROY:
 		RemoveTrayIcon();
+		WTSUnRegisterSessionNotification(hWnd);
 		PostQuitMessage(0);
 		break;
 
@@ -320,24 +409,27 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine
 
 	RegisterClass(&wc);
 
-	HWND hWnd = CreateWindowEx(0, CLASS_NAME, L"Resizer", WS_OVERLAPPEDWINDOW,
+	HWND hWnd = CreateWindowEx(WS_EX_TOOLWINDOW, CLASS_NAME, L"Resizer", WS_POPUP,
 		CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT,
 		NULL, NULL, hInstance, NULL);
 
 	if (hWnd == NULL) {
 		return 0;
 	}
+	g_hMainWnd = hWnd;
 
 	WM_TASKBARCREATED = RegisterWindowMessage(TEXT("TaskbarCreated"));
+	EnsureMessageFilter(hWnd);
 
-	AddTrayIcon(hWnd);
+	// No message-only window; keep it minimal and bind tray to main hidden window
 
-	hKeyboardHook = SetWindowsHookEx(WH_KEYBOARD_LL, LowLevelKeyboardProc, NULL, 0);
-	hMouseHook = SetWindowsHookEx(WH_MOUSE_LL, LowLevelMouseProc, NULL, 0);
+	// Register for session change notifications (this session)
+	WTSRegisterSessionNotification(hWnd, NOTIFY_FOR_THIS_SESSION);
 
-	if (!hKeyboardHook || !hMouseHook) {
-		std::cerr << "Failed to install hooks!" << std::endl;
-		return 1;
+	// Attempt initialization immediately, then keep retrying until success
+	TryInitialize(hWnd);
+	if (!g_hooksInstalled || !g_trayIconAdded) {
+		SetTimer(hWnd, RETRY_TIMER_ID, RETRY_INTERVAL_MS, NULL);
 	}
 
 	MSG msg;
@@ -346,11 +438,49 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine
 		DispatchMessage(&msg);
 	}
 
-	UnhookWindowsHookEx(hKeyboardHook);
-	UnhookWindowsHookEx(hMouseHook);
+	if (hKeyboardHook) UnhookWindowsHookEx(hKeyboardHook);
+	if (hMouseHook) UnhookWindowsHookEx(hMouseHook);
 
 	return 0;
 }
+
+static void EnsureHooksInstalled() {
+	if (g_hooksInstalled) return;
+	HHOOK kb = SetWindowsHookEx(WH_KEYBOARD_LL, LowLevelKeyboardProc, NULL, 0);
+	HHOOK mouse = SetWindowsHookEx(WH_MOUSE_LL, LowLevelMouseProc, NULL, 0);
+	if (kb && mouse) {
+		hKeyboardHook = kb;
+		hMouseHook = mouse;
+		g_hooksInstalled = true;
+	}
+	else {
+		if (kb) UnhookWindowsHookEx(kb);
+		if (mouse) UnhookWindowsHookEx(mouse);
+	}
+}
+
+static void TryInitialize(HWND hWnd) {
+	EnsureHooksInstalled();
+	AddTrayIcon(hWnd);
+}
+
+static void ShowTrayMenu(HWND hWnd) {
+	POINT pt;
+	GetCursorPos(&pt);
+	HMENU hMenu = CreatePopupMenu();
+	if (!hMenu) return;
+	AppendMenu(hMenu, MF_STRING, ID_TRAY_EXIT, TEXT("Exit"));
+	SetForegroundWindow(hWnd);
+	UINT cmd = TrackPopupMenu(hMenu, TPM_RIGHTBUTTON | TPM_BOTTOMALIGN | TPM_LEFTALIGN | TPM_RETURNCMD, pt.x, pt.y, 0, hWnd, NULL);
+	// Ensure proper menu dismissal
+	SendMessage(hWnd, WM_NULL, 0, 0);
+	if (cmd == ID_TRAY_EXIT) {
+		PostQuitMessage(0);
+	}
+	DestroyMenu(hMenu);
+}
+
+static void EnsureMessageFilter(HWND hWnd) { }
 
 LRESULT CALLBACK LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lParam) {
 	KBDLLHOOKSTRUCT* pKbDllHookStruct = (KBDLLHOOKSTRUCT*)lParam;

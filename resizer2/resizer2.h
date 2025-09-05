@@ -7,11 +7,15 @@
 #include <unordered_set>
 #include <atlbase.h>
 #include <string>
+#include <shellapi.h>
+#include <WtsApi32.h>
 
 #pragma comment(lib, "user32.lib")
+#pragma comment(lib, "Shell32.lib")
+#pragma comment(lib, "Wtsapi32.lib")
 
 #define TRAY_ICON_UID 1001
-#define WM_TRAYICON (WM_USER + 1)
+#define WM_TRAYICON (WM_APP + 1)
 
 // Config
 constexpr int DOUBLE_CLICK_THRESHOLD = 300; // ms

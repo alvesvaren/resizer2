@@ -693,4 +693,3 @@ DWORD WINAPI WindowOperationThreadProc(LPVOID lpParam) {
 	ctx.inProgress = false;
 	return 0;
 }
-gg

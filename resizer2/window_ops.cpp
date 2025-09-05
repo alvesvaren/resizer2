@@ -49,6 +49,16 @@ void adjustRect(HWND win, RECT& rect) {
     AdjustWindowRectEx(&rect, style, FALSE, styleEx);
 }
 
+RECT getWindowFrameBounds(HWND hWnd) {
+    RECT bounds{};
+    HRESULT hr = DwmGetWindowAttribute(hWnd, DWMWA_EXTENDED_FRAME_BOUNDS, &bounds, sizeof(bounds));
+    if (SUCCEEDED(hr)) {
+        return bounds;
+    }
+    GetWindowRect(hWnd, &bounds);
+    return bounds;
+}
+
 void snapToMonitor(HWND window, HMONITOR screen) {
     MONITORINFO info{};
     info.cbSize = sizeof(MONITORINFO);
@@ -163,8 +173,23 @@ void snapToFancyZone(HWND hWnd, HMONITOR hMon, POINT mousePos, bool maximized)
     }
 
     if (shouldMove) {
-        // newRect is the target outer window rect. Do not adjust by styles.
-        moveWindow<RESIZE>(hWnd, newRect);
+        // Expand to include DWM frame so the visible frame fits the zone exactly
+        RECT currentWindowRect{};
+        GetWindowRect(hWnd, &currentWindowRect);
+        RECT currentFrameRect = getWindowFrameBounds(hWnd);
+
+        int leftMargin = currentFrameRect.left - currentWindowRect.left;
+        int topMargin = currentFrameRect.top - currentWindowRect.top;
+        int rightMargin = currentWindowRect.right - currentFrameRect.right;
+        int bottomMargin = currentWindowRect.bottom - currentFrameRect.bottom;
+
+        RECT targetOuter{};
+        targetOuter.left = newRect.left - leftMargin;
+        targetOuter.top = newRect.top - topMargin;
+        targetOuter.right = newRect.right + rightMargin;
+        targetOuter.bottom = newRect.bottom + bottomMargin;
+
+        moveWindow<RESIZE>(hWnd, targetOuter);
     }
 }
 

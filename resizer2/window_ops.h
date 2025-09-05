@@ -11,6 +11,7 @@ void SetGlobalCursor();
 HWND getTopLevelParent(HWND hwnd);
 bool isWindowAllowed(HWND win);
 void adjustRect(HWND win, RECT& rect);
+RECT getWindowFrameBounds(HWND hWnd);
 void snapToMonitor(HWND window, HMONITOR screen);
 void snapToFancyZone(HWND hWnd, HMONITOR hMon, POINT mousePos, bool maximized);
 

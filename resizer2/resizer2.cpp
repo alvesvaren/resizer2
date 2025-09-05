@@ -2,9 +2,6 @@
 #include "resizer2.h"
 #include "window_ops.h"
 
-// systemCursors defined in window_ops.cpp
-
-// global state moved to state.cpp
 static const UINT RETRY_TIMER_ID = 1;
 static const UINT RETRY_INTERVAL_MS = 2000; // ms
 
@@ -127,8 +124,6 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine
 
 	WM_TASKBARCREATED = RegisterWindowMessage(TEXT("TaskbarCreated"));
 	EnsureMessageFilter(hWnd);
-
-	// No message-only window; keep it minimal and bind tray to main hidden window
 
 	// Register for session change notifications (this session)
 	WTSRegisterSessionNotification(hWnd, NOTIFY_FOR_THIS_SESSION);

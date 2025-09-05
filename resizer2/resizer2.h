@@ -13,10 +13,12 @@
 #include <string>
 #include <shellapi.h>
 #include <WtsApi32.h>
+#include <dwmapi.h>
 
 #pragma comment(lib, "user32.lib")
 #pragma comment(lib, "Shell32.lib")
 #pragma comment(lib, "Wtsapi32.lib")
+#pragma comment(lib, "Dwmapi.lib")
 
 #define TRAY_ICON_UID 1001
 #define WM_TRAYICON (WM_APP + 1)

@@ -19,11 +19,14 @@ void EnsureHooksInstalled() {
 LRESULT CALLBACK LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lParam) {
     KBDLLHOOKSTRUCT* pKbDllHookStruct = (KBDLLHOOKSTRUCT*)lParam;
     if (nCode == HC_ACTION) {
-        if (modKeyPressed && (GetAsyncKeyState(VK_LWIN) & 0x8000) == 0) {
+        // Keep modifier state in sync with either Win key being held
+        if (modKeyPressed &&
+            (GetAsyncKeyState(VK_LWIN) & 0x8000) == 0 &&
+            (GetAsyncKeyState(VK_RWIN) & 0x8000) == 0) {
             modKeyPressed = false;
         }
 
-        if (pKbDllHookStruct->vkCode == VK_LWIN && pKbDllHookStruct->flags) {
+        if (pKbDllHookStruct->vkCode == VK_LWIN || pKbDllHookStruct->vkCode == VK_RWIN) {
             if (wParam == WM_KEYDOWN || wParam == WM_SYSKEYDOWN) {
                 if (!modKeyPressed) {
                     didUseWindowsKey = false;
@@ -31,8 +34,10 @@ LRESULT CALLBACK LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lParam) {
                 modKeyPressed = true;
             }
             else if (wParam == WM_KEYUP || wParam == WM_SYSKEYUP) {
-                modKeyPressed = false;
-                if (didUseWindowsKey) {
+                bool leftWinDown = (GetAsyncKeyState(VK_LWIN) & 0x8000) != 0;
+                bool rightWinDown = (GetAsyncKeyState(VK_RWIN) & 0x8000) != 0;
+                modKeyPressed = leftWinDown || rightWinDown;
+                if (!modKeyPressed && didUseWindowsKey) {
                     INPUT inputs[2] = {};
                     ZeroMemory(inputs, sizeof(inputs));
 
@@ -54,7 +59,9 @@ LRESULT CALLBACK LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lParam) {
 LRESULT CALLBACK LowLevelMouseProc(int nCode, WPARAM wParam, LPARAM lParam) {
     MSLLHOOKSTRUCT* pMsLlHookStruct = (MSLLHOOKSTRUCT*)lParam;
     if (nCode == HC_ACTION) {
-        if (modKeyPressed && (GetAsyncKeyState(VK_LWIN) & 0x8000) == 0) {
+        if (modKeyPressed &&
+            (GetAsyncKeyState(VK_LWIN) & 0x8000) == 0 &&
+            (GetAsyncKeyState(VK_RWIN) & 0x8000) == 0) {
             modKeyPressed = false;
         }
 

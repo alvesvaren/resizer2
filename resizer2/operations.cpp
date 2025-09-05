@@ -75,7 +75,6 @@ void startWindowOperation() {
 	}
 
 	GetWindowRect(ctx.targetWindow, &ctx.startWindowRect);
-	SetForegroundWindow(ctx.targetWindow);
 
 	HANDLE hThread = CreateThread(NULL, 0, WindowOperationThreadProc, NULL, 0, NULL);
 	if (hThread != NULL) {

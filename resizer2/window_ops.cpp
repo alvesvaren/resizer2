@@ -34,7 +34,7 @@ HWND getTopLevelParent(HWND hwnd) {
 
 template <ContextType type>
 void moveWindow(HWND hwnd, RECT rect, bool async) {
-    UINT resizeFlags = SWP_NOZORDER | SWP_NOSENDCHANGING | SWP_DEFERERASE;
+    UINT resizeFlags = SWP_NOZORDER | SWP_NOSENDCHANGING | SWP_DEFERERASE | SWP_NOACTIVATE;
     UINT moveFlags =  resizeFlags | SWP_NOSIZE | SWP_NOREDRAW | SWP_NOCOPYBITS;
     SetWindowPos(hwnd, NULL, rect.left, rect.top, rect.right - rect.left, rect.bottom - rect.top, (type == MOVE ? moveFlags : resizeFlags) | (async ? SWP_ASYNCWINDOWPOS : 0));
 }
@@ -163,7 +163,7 @@ void snapToFancyZone(HWND hWnd, HMONITOR hMon, POINT mousePos, bool maximized)
     }
 
     if (shouldMove) {
-        adjustRect(hWnd, newRect);
+        // newRect is the target outer window rect. Do not adjust by styles.
         moveWindow<RESIZE>(hWnd, newRect);
     }
 }

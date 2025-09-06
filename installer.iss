@@ -30,13 +30,14 @@ ArchitecturesAllowed=x64compatible
 ; the 64-bit view of the registry.
 ArchitecturesInstallIn64BitMode=x64compatible
 DefaultGroupName={#MyAppName}
-AppMutex=Resizer2Mutex
 AllowNoIcons=yes
 ; Uncomment the following line to run in non administrative install mode (install for current user only.)
 ;PrivilegesRequired=lowest
 OutputBaseFilename=resizer2-setup
 Compression=zip
 WizardStyle=modern
+CloseApplications=yes
+RestartApplications=no
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
@@ -52,11 +53,14 @@ Source: "C:\Users\alve\source\repos\resizer2\LICENSE.txt"; DestDir: "{app}"; Fla
 Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"
 
 [Run]
+Filename: "taskkill"; Parameters: "/IM ""{#MyAppExeName}"" /T /F"; Flags: runhidden;
 Filename: "schtasks"; Parameters: "/Delete /TN ""Resizer2"" /F"; Flags: runhidden;
-Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#StringChange(MyAppName, '&', '&&')}}"; Flags: nowait postinstall skipifsilent runascurrentuser
-Filename: "schtasks"; Parameters: "/Create /TN ""Resizer2"" /TR ""\""{app}\{#MyAppExeName}""\"" /SC ONLOGON /RL HIGHEST"; Flags: runhidden; Tasks: autostart
+// will be ran in silent mode
+Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#StringChange(MyAppName, '&', '&&')}}"; Flags: nowait postinstall runascurrentuser
+Filename: "schtasks"; Parameters: "/Create /TN ""Resizer2"" /TR ""\""{app}\{#MyAppExeName}\"""" /SC ONLOGON /RL HIGHEST"; Flags: runhidden; Tasks: autostart
 
 [UninstallRun]
+Filename: "taskkill"; Parameters: "/IM ""{#MyAppExeName}"" /T /F"; Flags: runhidden; RunOnceId: "running-task-kill"
 Filename: "schtasks"; Parameters: "/Delete /TN ""Resizer2"" /F"; Flags: runhidden; RunOnceId: "autostart-task-remove"
 
 [Code]

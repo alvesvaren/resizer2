@@ -57,6 +57,9 @@ void startWindowOperation() {
 		return;
 	}
 
+	// Focus the window
+	SetForegroundWindow(ctx.targetWindow);
+
 	// Double-click for toggle maximize
 	if (ctx.operationType == MOVE) {
 		SetGlobalCursor<SIZEALL>();

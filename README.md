@@ -29,7 +29,7 @@ Rewrite of https://github.com/IsacEkeroth/ahk-resize-windows in C++
 
 ## Updating
 
-- Stop the resizer2.exe file either from task manager or the system tray
+- Stop the resizer2-portable.exe file either from task manager or the system tray
 - Download and start the updated installer from github
 
 ## Extra features:
@@ -39,7 +39,7 @@ Rewrite of https://github.com/IsacEkeroth/ahk-resize-windows in C++
 
 ## Quirks:
 
-- To not make the start menu appear, it fakes the combination Win+F13, which usually doesn't do anything, but might conflict with other hotkeys you have set up.
+- To not make the start menu appear, it fakes the combination Win+LShift, which usually doesn't do anything, but might conflict with other hotkeys you have set up.
 - It needs to run as administrator to work for system windows (such as the task manager), if you don't want this, use the portable version.
 - Some fullscreen apps really doesn't like being moved to another monitor, so be careful moving fullscreened windows.
 - Only precompiled to x64, but should work on arm64 with emulation. 32-bit might work if you compile it yourself!

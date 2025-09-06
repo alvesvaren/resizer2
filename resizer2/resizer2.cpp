@@ -102,7 +102,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine
 	// Both for the uninstaller, and to prevent multiple instances
 	HANDLE hMutexHandle = CreateMutex(NULL, FALSE, L"Resizer2Mutex");
 	if (GetLastError() == ERROR_ALREADY_EXISTS) {
-		MessageBox(NULL, L"Resizer is already running!", L"Resizer", MB_ICONINFORMATION | MB_OK);
+		MessageBox(NULL, L"Resizer is already running! Close it before running again.", L"Resizer", MB_ICONINFORMATION | MB_OK);
 		return 0;
 	}
 

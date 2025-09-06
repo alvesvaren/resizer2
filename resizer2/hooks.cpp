@@ -34,10 +34,8 @@ LRESULT CALLBACK LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lParam) {
                 modKeyPressed = true;
             }
             else if (wParam == WM_KEYUP || wParam == WM_SYSKEYUP) {
-                bool leftWinDown = (GetAsyncKeyState(VK_LWIN) & 0x8000) != 0;
-                bool rightWinDown = (GetAsyncKeyState(VK_RWIN) & 0x8000) != 0;
-                modKeyPressed = leftWinDown || rightWinDown;
-                if (!modKeyPressed && didUseWindowsKey) {
+                modKeyPressed = false;
+                if (didUseWindowsKey) {
                     INPUT inputs[2] = {};
                     ZeroMemory(inputs, sizeof(inputs));
 

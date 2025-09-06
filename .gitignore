@@ -364,3 +364,6 @@ FodyWeavers.xsd
 
 # Inno Setup Output folder
 Output/
+
+# Local winget manifests
+manifests/

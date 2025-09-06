@@ -29,7 +29,7 @@ Rewrite of https://github.com/IsacEkeroth/ahk-resize-windows in C++
 
 ## Updating
 
-- Download and start the updated installer from github
+- Download and start the [latest version of the installer](https://github.com/alvesvaren/resizer2/releases/latest/download/resizer2-setup.exe)
 
 ## Extra features:
 

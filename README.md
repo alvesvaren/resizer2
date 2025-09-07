@@ -50,4 +50,4 @@ When installing using the setup program, you can choose to enable auto starting 
 
 ## Uninstalling:
 
-You can uninstall it using the built in uninstallation feature in windows. You will need to close the app before proceeding (in the system tray or task manager)
+You can uninstall it using the built in uninstallation feature in windows.

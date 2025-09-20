@@ -6,6 +6,12 @@ Rewrite of https://github.com/IsacEkeroth/ahk-resize-windows in C++
 
 ## Installation:
 
+### Using winget
+
+1. Run `winget install resizer2` in a terminal window
+
+### From github
+
 1. Download the [latest version of the installer](https://github.com/alvesvaren/resizer2/releases/latest/download/resizer2-setup.exe)
 2. Run the installer
 

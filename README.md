@@ -8,7 +8,7 @@ Rewrite of https://github.com/IsacEkeroth/ahk-resize-windows in C++
 
 ### Using winget
 
-1. Run `winget install resizer2` in a terminal window
+1. Run `winget install alvesvaren.resizer2` in a terminal window
 
 ### From github
 

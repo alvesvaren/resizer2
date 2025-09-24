@@ -99,6 +99,8 @@ void snapToFancyZone(HWND hWnd, HMONITOR hMon, POINT mousePos, bool maximized)
     POINT blCorner = { mi.rcWork.left,  mi.rcWork.bottom };
     POINT brCorner = { mi.rcWork.right, mi.rcWork.bottom };
 
+    // Use a radius proportional to the monitor work area, but normalize by DPI so
+    // physical size of the corner activation region stays consistent across scaling.
     double radius = CORNER_RADIUS_FRACTION * min(monWidth, monHeight);
 
     auto dist = [](POINT a, POINT b) {

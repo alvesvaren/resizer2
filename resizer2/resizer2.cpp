@@ -10,6 +10,63 @@ static void TryInitialize(HWND hWnd);
 extern void ShowTrayMenu(HWND hWnd);
 static void EnsureMessageFilter(HWND hWnd);
 
+// Ensure the process is DPI aware so cursor positions and monitor work areas
+// use the same coordinate space even when display scaling != 100%.
+static void EnableDpiAwareness()
+{
+    // Prefer Per-Monitor V2 if available (Windows 10+)
+    HMODULE hUser32 = GetModuleHandleW(L"user32.dll");
+    if (!hUser32) hUser32 = LoadLibraryW(L"user32.dll");
+    if (hUser32)
+    {
+        typedef BOOL (WINAPI *SetProcessDpiAwarenessContext_t)(HANDLE);
+
+#ifndef DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2
+#define DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2 ((HANDLE)-4)
+#endif
+
+        auto pSetProcessDpiAwarenessContext = (SetProcessDpiAwarenessContext_t)GetProcAddress(hUser32, "SetProcessDpiAwarenessContext");
+        if (pSetProcessDpiAwarenessContext)
+        {
+            if (pSetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2))
+            {
+                return; // Success
+            }
+        }
+    }
+
+    // Fallback to Per-Monitor (Windows 8.1+)
+    HMODULE hShcore = LoadLibraryW(L"Shcore.dll");
+    if (hShcore)
+    {
+        typedef HRESULT (WINAPI *SetProcessDpiAwareness_t)(int);
+#ifndef PROCESS_PER_MONITOR_DPI_AWARE
+#define PROCESS_PER_MONITOR_DPI_AWARE 2
+#endif
+        auto pSetProcessDpiAwareness = (SetProcessDpiAwareness_t)GetProcAddress(hShcore, "SetProcessDpiAwareness");
+        if (pSetProcessDpiAwareness)
+        {
+            if (SUCCEEDED(pSetProcessDpiAwareness(PROCESS_PER_MONITOR_DPI_AWARE)))
+            {
+                return; // Success
+            }
+        }
+    }
+
+    // Last resort: System DPI aware (Vista+)
+    HMODULE hUser32b = GetModuleHandleW(L"user32.dll");
+    if (!hUser32b) hUser32b = LoadLibraryW(L"user32.dll");
+    if (hUser32b)
+    {
+        typedef BOOL (WINAPI *SetProcessDPIAware_t)();
+        auto pSetProcessDPIAware = (SetProcessDPIAware_t)GetProcAddress(hUser32b, "SetProcessDPIAware");
+        if (pSetProcessDPIAware)
+        {
+            pSetProcessDPIAware();
+        }
+    }
+}
+
 LRESULT CALLBACK WindowProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
 	if (uMsg == WM_TASKBARCREATED) {
 		g_trayIconAdded = false; // taskbar recreated; force re-add
@@ -97,6 +154,8 @@ static void TryInitialize(HWND hWnd) {
 static void EnsureMessageFilter(HWND hWnd) { }
 
 int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine, int nCmdShow) {
+    EnableDpiAwareness();
+
 	const wchar_t CLASS_NAME[] = L"TrayIconWindowClass";
 
 	// Both for the uninstaller, and to prevent multiple instances

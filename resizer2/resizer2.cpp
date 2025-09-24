@@ -5,6 +5,51 @@
 static const UINT RETRY_TIMER_ID = 1;
 static const UINT RETRY_INTERVAL_MS = 2000; // ms
 
+// Ensure the process is DPI aware so coordinates from various APIs are consistent
+static void EnableDpiAwareness() {
+	HMODULE user32 = GetModuleHandleW(L"user32.dll");
+	if (user32) {
+		// Prefer Per-Monitor V2 awareness when available (Windows 10+)
+		typedef BOOL (WINAPI *SetProcessDpiAwarenessContext_t)(HANDLE);
+		SetProcessDpiAwarenessContext_t pSetProcessDpiAwarenessContext =
+			reinterpret_cast<SetProcessDpiAwarenessContext_t>(GetProcAddress(user32, "SetProcessDpiAwarenessContext"));
+		if (pSetProcessDpiAwarenessContext) {
+			// -4 is DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2 to avoid SDK dependency
+			HANDLE PER_MONITOR_AWARE_V2 = (HANDLE)-4;
+			if (pSetProcessDpiAwarenessContext(PER_MONITOR_AWARE_V2)) {
+				return;
+			}
+		}
+	}
+
+	// Fallback to Per-Monitor awareness (Windows 8.1+)
+	HMODULE shcore = LoadLibraryW(L"Shcore.dll");
+	if (shcore) {
+		typedef HRESULT (WINAPI *SetProcessDpiAwareness_t)(int /*PROCESS_DPI_AWARENESS*/);
+		SetProcessDpiAwareness_t pSetProcessDpiAwareness =
+			reinterpret_cast<SetProcessDpiAwareness_t>(GetProcAddress(shcore, "SetProcessDpiAwareness"));
+		if (pSetProcessDpiAwareness) {
+			// 2 is PROCESS_PER_MONITOR_DPI_AWARE
+			if (SUCCEEDED(pSetProcessDpiAwareness(2))) {
+				FreeLibrary(shcore);
+				return;
+			}
+		}
+		FreeLibrary(shcore);
+	}
+
+	// Last resort (Vista+): system DPI aware
+	if (user32 == NULL) user32 = GetModuleHandleW(L"user32.dll");
+	if (user32) {
+		typedef BOOL (WINAPI *SetProcessDPIAware_t)();
+		SetProcessDPIAware_t pSetProcessDPIAware =
+			reinterpret_cast<SetProcessDPIAware_t>(GetProcAddress(user32, "SetProcessDPIAware"));
+		if (pSetProcessDPIAware) {
+			pSetProcessDPIAware();
+		}
+	}
+}
+
 extern void EnsureHooksInstalled();
 static void TryInitialize(HWND hWnd);
 extern void ShowTrayMenu(HWND hWnd);
@@ -97,6 +142,9 @@ static void TryInitialize(HWND hWnd) {
 static void EnsureMessageFilter(HWND hWnd) { }
 
 int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine, int nCmdShow) {
+	// Ensure consistent coordinate space across APIs at non-100% scaling
+	EnableDpiAwareness();
+
 	const wchar_t CLASS_NAME[] = L"TrayIconWindowClass";
 
 	// Both for the uninstaller, and to prevent multiple instances

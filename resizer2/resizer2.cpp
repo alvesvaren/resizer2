@@ -1,6 +1,7 @@
 #define OEMRESOURCE
 #include "resizer2.h"
 #include "window_ops.h"
+#include <ShellScalingApi.h>
 
 static const UINT RETRY_TIMER_ID = 1;
 static const UINT RETRY_INTERVAL_MS = 2000; // ms
@@ -9,6 +10,41 @@ extern void EnsureHooksInstalled();
 static void TryInitialize(HWND hWnd);
 extern void ShowTrayMenu(HWND hWnd);
 static void EnsureMessageFilter(HWND hWnd);
+
+static void EnablePerMonitorDpiAwareness()
+{
+    HMODULE hUser32 = GetModuleHandleW(L"user32.dll");
+    if (hUser32)
+    {
+        typedef BOOL (WINAPI *SetProcessDpiAwarenessContext_t)(DPI_AWARENESS_CONTEXT value);
+        auto setCtx = reinterpret_cast<SetProcessDpiAwarenessContext_t>(GetProcAddress(hUser32, "SetProcessDpiAwarenessContext"));
+        if (setCtx)
+        {
+            if (setCtx(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2))
+                return;
+            if (setCtx(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE))
+                return;
+        }
+    }
+
+    HMODULE hShcore = LoadLibraryW(L"Shcore.dll");
+    if (hShcore)
+    {
+        typedef HRESULT (WINAPI *SetProcessDpiAwareness_t)(PROCESS_DPI_AWARENESS value);
+        auto setAw = reinterpret_cast<SetProcessDpiAwareness_t>(GetProcAddress(hShcore, "SetProcessDpiAwareness"));
+        if (setAw)
+        {
+            if (SUCCEEDED(setAw(PROCESS_PER_MONITOR_DPI_AWARE)))
+            {
+                FreeLibrary(hShcore);
+                return;
+            }
+        }
+        FreeLibrary(hShcore);
+    }
+
+    SetProcessDPIAware();
+}
 
 LRESULT CALLBACK WindowProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
 	if (uMsg == WM_TASKBARCREATED) {
@@ -106,7 +142,9 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine
 		return 0;
 	}
 
-	WNDCLASS wc = {};
+    EnablePerMonitorDpiAwareness();
+
+    WNDCLASS wc = {};
 	wc.lpfnWndProc = WindowProc;
 	wc.hInstance = hInstance;
 	wc.lpszClassName = CLASS_NAME;

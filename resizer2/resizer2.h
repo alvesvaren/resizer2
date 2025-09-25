@@ -19,6 +19,7 @@
 #pragma comment(lib, "Shell32.lib")
 #pragma comment(lib, "Wtsapi32.lib")
 #pragma comment(lib, "Dwmapi.lib")
+#pragma comment(lib, "Shcore.lib")
 
 #define TRAY_ICON_UID 1001
 #define WM_TRAYICON (WM_APP + 1)

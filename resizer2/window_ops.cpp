@@ -49,14 +49,22 @@ void adjustRect(HWND win, RECT& rect) {
     AdjustWindowRectEx(&rect, style, FALSE, styleEx);
 }
 
+// With per-monitor DPI awareness, coordinates from User32/DWM are already in device pixels.
+// No additional manual scaling should be applied.
+
 RECT getWindowFrameBounds(HWND hWnd) {
-    RECT bounds{};
-    HRESULT hr = DwmGetWindowAttribute(hWnd, DWMWA_EXTENDED_FRAME_BOUNDS, &bounds, sizeof(bounds));
-    if (SUCCEEDED(hr)) {
-        return bounds;
-    }
-    GetWindowRect(hWnd, &bounds);
+  RECT bounds{};
+  HRESULT hr = DwmGetWindowAttribute(hWnd, DWMWA_EXTENDED_FRAME_BOUNDS, &bounds,
+                                     sizeof(bounds));
+  if (SUCCEEDED(hr)) {
     return bounds;
+  }
+
+  POINT mousePos = {0, 0};
+  GetCursorPos(&mousePos);
+  GetWindowRect(hWnd, &bounds);
+  
+  return bounds;
 }
 
 void snapToMonitor(HWND window, HMONITOR screen) {

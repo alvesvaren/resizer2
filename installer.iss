@@ -2,7 +2,7 @@
 ; SEE THE DOCUMENTATION FOR DETAILS ON CREATING INNO SETUP SCRIPT FILES!
 
 #define MyAppName "Resizer 2"
-#define MyAppVersion "2.0.2"
+#define MyAppVersion "2.0.3"
 #define MyAppPublisher "Alve Svarén"
 #define MyAppURL "https://github.com/alvesvaren/resizer2"
 #define MyAppExeName "resizer2-portable.exe"

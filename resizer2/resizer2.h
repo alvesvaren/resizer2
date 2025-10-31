@@ -44,6 +44,7 @@ const std::unordered_set<std::wstring> disallowedClasses{
 	L"Shell_TrayWnd",
 	L"Progman",
 	L"WorkerW",
+    L"RiotWindowClass"
 };
 
 enum ContextType {

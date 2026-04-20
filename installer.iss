@@ -58,6 +58,7 @@ Filename: "schtasks"; Parameters: "/Delete /TN ""Resizer2"" /F"; Flags: runhidde
 // will be ran in silent mode
 Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#StringChange(MyAppName, '&', '&&')}}"; Flags: nowait postinstall runascurrentuser
 Filename: "schtasks"; Parameters: "/Create /TN ""Resizer2"" /TR ""\""{app}\{#MyAppExeName}\"""" /SC ONLOGON /RL HIGHEST"; Flags: runhidden; Tasks: autostart
+Filename: "powershell.exe"; Parameters: "-WindowStyle Hidden -Command ""Set-ScheduledTask -TaskName 'Resizer2' -Settings (New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries)"""; Flags: runhidden waituntilterminated; Tasks: autostart
 
 [UninstallRun]
 Filename: "taskkill"; Parameters: "/IM ""{#MyAppExeName}"" /T /F"; Flags: runhidden; RunOnceId: "running-task-kill"

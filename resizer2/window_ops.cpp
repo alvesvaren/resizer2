@@ -46,6 +46,43 @@ void moveWindow(HWND hwnd, RECT rect, bool async) {
 template void moveWindow<MOVE>(HWND, RECT, bool);
 template void moveWindow<RESIZE>(HWND, RECT, bool);
 
+void waitForNextFrame() {
+    if (FAILED(DwmFlush())) Sleep(1);
+}
+
+WindowPositioner::WindowPositioner(HWND hwnd) : hwnd(hwnd), thread(&WindowPositioner::run, this) {}
+
+WindowPositioner::~WindowPositioner() {
+    {
+        std::lock_guard lock(mutex);
+        stopping = true;
+    }
+    changed.notify_one();
+    thread.join();
+}
+
+void WindowPositioner::request(RECT rect) {
+    {
+        std::lock_guard lock(mutex);
+        pending = rect;
+    }
+    changed.notify_one();
+}
+
+void WindowPositioner::run() {
+    std::unique_lock lock(mutex);
+    for (;;) {
+        changed.wait(lock, [&] { return pending || stopping; });
+        if (!pending) return;
+
+        RECT rect = *pending;
+        pending.reset();
+        lock.unlock();
+        moveWindow<RESIZE>(hwnd, rect, false);
+        lock.lock();
+    }
+}
+
 void adjustRect(HWND win, RECT& rect) {
     LONG style = GetWindowLong(win, GWL_STYLE);
     LONG styleEx = GetWindowLong(win, GWL_EXSTYLE);
@@ -420,18 +457,19 @@ void setWindowSnappedToZone(HWND hWnd, bool snapped) {
 // inside the work area move, and every snapped window with an edge on the same line moves that
 // edge along, so a divider through a whole grid of windows moves as one and every window stays
 // snapped. Edges along the work area border stay put, since moving them would unsnap the window.
-// An unsnapped window is alone on its lines and both grabbed edges move.
-std::vector<ResizeParticipant> getResizeParticipants(HWND hWnd, bool isLeft, bool isTop) {
+// An unsnapped window is alone on its lines and the grabbed edges move.
+std::vector<ResizeParticipant> getResizeParticipants(HWND hWnd, LONG RECT::* xEdge, LONG RECT::* yEdge) {
     RECT start{};
     GetWindowRect(hWnd, &start);
-    LONG RECT::* xEdge = isLeft ? &RECT::left : &RECT::right;
-    LONG RECT::* yEdge = isTop ? &RECT::top : &RECT::bottom;
     if (!isWindowArranged || !isWindowArranged(hWnd)) return { { hWnd, start, xEdge, yEdge } };
 
     RECT frame = getWindowFrameBounds(hWnd);
     RECT work = getMonitorInfo(hWnd).rcWork;
-    std::optional<LONG> xLine = touches(frame.*xEdge, work.*xEdge) ? std::nullopt : std::optional(frame.*xEdge);
-    std::optional<LONG> yLine = touches(frame.*yEdge, work.*yEdge) ? std::nullopt : std::optional(frame.*yEdge);
+    auto lineOf = [&](LONG RECT::* edge) {
+        return edge && !touches(frame.*edge, work.*edge) ? std::optional(frame.*edge) : std::nullopt;
+    };
+    std::optional<LONG> xLine = lineOf(xEdge);
+    std::optional<LONG> yLine = lineOf(yEdge);
 
     // The edge of a frame that lies on the line, if any
     auto edgeOnLine = [](const RECT& frame, std::optional<LONG> line, LONG RECT::* first, LONG RECT::* second) -> LONG RECT::* {
@@ -482,6 +520,10 @@ bool unsnapWindow(HWND hWnd, POINT grab, RECT& rect) {
 
 template <ResizerCursor cursor>
 void SetGlobalCursor() {
+    // Restore the system cursors first: once replaced, LoadCursor returns the replacement, so
+    // switching from one global cursor to another would otherwise keep the first one
+    SystemParametersInfo(SPI_SETCURSORS, 0, nullptr, 0);
+
     HCURSOR hCursor = NULL;
     switch (cursor) {
     case SIZEALL:
@@ -493,14 +535,17 @@ void SetGlobalCursor() {
     case SIZENESW:
         hCursor = LoadCursor(NULL, IDC_SIZENESW);
         break;
+    case SIZEWE:
+        hCursor = LoadCursor(NULL, IDC_SIZEWE);
+        break;
+    case SIZENS:
+        hCursor = LoadCursor(NULL, IDC_SIZENS);
+        break;
     default:
         break;
     }
 
-    if (hCursor == NULL) {
-        SystemParametersInfo(SPI_SETCURSORS, 0, nullptr, 0);
-        return;
-    }
+    if (hCursor == NULL) return;
 
     for (auto cursorId : systemCursors) {
         HCURSOR newCursor = CopyCursor(hCursor);
@@ -512,6 +557,8 @@ void SetGlobalCursor() {
 template void SetGlobalCursor<SIZEALL>();
 template void SetGlobalCursor<SIZENWSE>();
 template void SetGlobalCursor<SIZENESW>();
+template void SetGlobalCursor<SIZEWE>();
+template void SetGlobalCursor<SIZENS>();
 template void SetGlobalCursor<UNSET>();
 
 

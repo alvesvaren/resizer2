@@ -70,6 +70,8 @@ enum ResizerCursor {
     SIZEALL,
     SIZENWSE,
     SIZENESW,
+    SIZEWE,
+    SIZENS,
     UNSET,
 };
 
@@ -111,7 +113,7 @@ struct ResizeParticipant {
     LONG RECT::* xEdge; // edge that follows the mouse horizontally, if any
     LONG RECT::* yEdge; // edge that follows the mouse vertically, if any
 };
-std::vector<ResizeParticipant> getResizeParticipants(HWND hWnd, bool isLeft, bool isTop);
+std::vector<ResizeParticipant> getResizeParticipants(HWND hWnd, LONG RECT::* xEdge, LONG RECT::* yEdge);
 template <ResizerCursor cursor>
 void SetGlobalCursor();
 void AddTrayIcon(HWND hWnd);

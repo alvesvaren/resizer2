@@ -18,7 +18,7 @@ HWND getTopLevelParent(HWND hwnd);
 bool isWindowAllowed(HWND win);
 RECT getWindowFrameBounds(HWND hWnd);
 void snapToMonitor(HWND window, HMONITOR screen);
-bool snapToFancyZone(HWND hWnd, HMONITOR hMon, POINT mousePos, bool maximized);
+std::optional<RECT> getFancyZoneRect(HWND hWnd, HMONITOR hMon, POINT mousePos, bool maximized);
 void setWindowSnappedToZone(HWND hWnd, bool snapped);
 bool unsnapWindow(HWND hWnd, POINT grab, RECT& rect);
 std::vector<ResizeParticipant> getResizeParticipants(HWND hWnd, LONG RECT::* xEdge, LONG RECT::* yEdge);
@@ -28,6 +28,31 @@ void moveWindow(HWND hwnd, RECT rect, bool async = true);
 
 // Waits for the next composed frame, so window updates go out once per displayed frame
 void waitForNextFrame();
+
+// Whether "Show window contents while dragging" is on; if not, operations show an outline instead
+bool showWindowContentsWhileDragging();
+
+// Handles pending messages for windows owned by the calling thread
+void pumpMessages();
+
+// Outline of a window's visible frame, shown in place of the window while it is dragged when
+// "Show window contents while dragging" is off. Its windows belong to the creating thread, which
+// has to pump messages for them to paint.
+class DragOutline {
+public:
+    explicit DragOutline(HWND target);
+    ~DragOutline();
+    DragOutline(const DragOutline&) = delete;
+    DragOutline& operator=(const DragOutline&) = delete;
+
+    // Takes the rect the window itself would be given, like SetWindowPos
+    void move(RECT windowRect);
+
+private:
+    HWND edges[4]{};
+    RECT margins{}; // How far the visible frame lies inside the window rect on each side
+    int thickness = 0;
+};
 
 // Applies the latest requested size and position to a window from a thread of its own.
 // SetWindowPos on another process's window waits until that app has handled the change, so a

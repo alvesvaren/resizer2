@@ -110,6 +110,24 @@ DWORD WINAPI WindowOperationThreadProc(LPVOID lpParam) {
 		bool snappedToZone = false;
 		bool dragStarted = false;
 
+		// Every placement of the window goes through here: with "Show window contents while
+		// dragging" off, an outline moves instead and the window takes its last place at the end
+		std::optional<DragOutline> outline;
+		if (!showWindowContentsWhileDragging()) outline.emplace(ctx.targetWindow);
+		std::optional<RECT> placed;
+		auto place = [&](RECT rect, ContextType type) {
+			placed = rect;
+			if (outline) {
+				outline->move(rect);
+			}
+			else if (type == MOVE) {
+				moveWindow<MOVE>(ctx.targetWindow, rect);
+			}
+			else {
+				moveWindow<RESIZE>(ctx.targetWindow, rect);
+			}
+		};
+
 		while (ctx.inProgress) {
 			if (WaitForSingleObject(ctx.hEvent, 0) == WAIT_OBJECT_0) {
 				break;
@@ -144,7 +162,9 @@ DWORD WINAPI WindowOperationThreadProc(LPVOID lpParam) {
 
 				// SHIFT is pressed => do fancy zones
 				HMONITOR screen = SysGetMonitorContainingPoint(pt.x, pt.y);
-				snappedToZone = snapToFancyZone(ctx.targetWindow, screen, pt, maximized);
+				std::optional<RECT> zoneRect = getFancyZoneRect(ctx.targetWindow, screen, pt, maximized);
+				snappedToZone = zoneRect.has_value();
+				if (zoneRect) place(*zoneRect, RESIZE);
 			}
 			else {
 				if (wasShiftDown) {
@@ -152,8 +172,7 @@ DWORD WINAPI WindowOperationThreadProc(LPVOID lpParam) {
 					snappedToZone = false;
 					RECT newRect = ctx.startWindowRect;
 					OffsetRect(&newRect, dx, dy);
-					moveWindow<RESIZE>(ctx.targetWindow, newRect);
-
+					place(newRect, RESIZE);
 				}
 				// SHIFT is not pressed:
 				if (maximized) {
@@ -168,13 +187,18 @@ DWORD WINAPI WindowOperationThreadProc(LPVOID lpParam) {
 					rect.right += dx;
 					rect.top += dy;
 					rect.bottom += dy;
-					moveWindow<MOVE>(ctx.targetWindow, rect);
+					place(rect, MOVE);
 				}
 			}
 
+			pumpMessages();
 			waitForNextFrame();
 		}
 
+		if (outline) {
+			outline.reset();
+			if (placed) moveWindow<RESIZE>(ctx.targetWindow, *placed, false);
+		}
 		setWindowSnappedToZone(ctx.targetWindow, snappedToZone);
 	}
 
@@ -202,8 +226,13 @@ DWORD WINAPI WindowOperationThreadProc(LPVOID lpParam) {
 			ShowWindow(ctx.targetWindow, SW_RESTORE);
 		}
 
+		// With "Show window contents while dragging" off, outlines move instead and the windows
+		// take their last places at the end
+		bool showContents = showWindowContentsWhileDragging();
 		std::vector<ResizeParticipant> participants;
 		std::vector<std::unique_ptr<WindowPositioner>> positioners;
+		std::vector<std::unique_ptr<DragOutline>> outlines;
+		std::vector<RECT> placed;
 		auto beginResize = [&] {
 			if (!yEdge) {
 				SetGlobalCursor<SIZEWE>();
@@ -220,7 +249,13 @@ DWORD WINAPI WindowOperationThreadProc(LPVOID lpParam) {
 
 			participants = getResizeParticipants(ctx.targetWindow, xEdge, yEdge);
 			for (auto& participant : participants) {
-				positioners.push_back(std::make_unique<WindowPositioner>(participant.hwnd));
+				if (showContents) {
+					positioners.push_back(std::make_unique<WindowPositioner>(participant.hwnd));
+				}
+				else {
+					outlines.push_back(std::make_unique<DragOutline>(participant.hwnd));
+				}
+				placed.push_back(participant.start);
 			}
 		};
 
@@ -260,11 +295,25 @@ DWORD WINAPI WindowOperationThreadProc(LPVOID lpParam) {
 					RECT newRect = start;
 					if (movingX) newRect.*movingX += dx;
 					if (movingY) newRect.*movingY += dy;
-					positioners[i]->request(newRect);
+					placed[i] = newRect;
+					if (showContents) {
+						positioners[i]->request(newRect);
+					}
+					else {
+						outlines[i]->move(newRect);
+					}
 				}
 			}
 
+			pumpMessages();
 			waitForNextFrame();
+		}
+
+		if (!showContents) {
+			outlines.clear();
+			for (size_t i = 0; i < participants.size(); i++) {
+				moveWindow<RESIZE>(participants[i].hwnd, placed[i], false);
+			}
 		}
 	}
 

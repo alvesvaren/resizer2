@@ -1,7 +1,6 @@
 #include "window_ops.h"
 #include <mutex>
 #include <optional>
-#include <set>
 
 const std::array<int, 13> systemCursors{{
     OCR_NORMAL,
@@ -46,8 +45,17 @@ void moveWindow(HWND hwnd, RECT rect, bool async) {
 template void moveWindow<MOVE>(HWND, RECT, bool);
 template void moveWindow<RESIZE>(HWND, RECT, bool);
 
-void waitForNextFrame() {
-    if (FAILED(DwmFlush())) Sleep(1);
+// Bounds the wait so state that changes without input, such as a held cursor at a screen edge,
+// is still picked up
+constexpr DWORD INPUT_WAIT_TIMEOUT_MS = 15;
+static HANDLE inputEvent = CreateEvent(NULL, FALSE, FALSE, NULL);
+
+void notifyInput() {
+    SetEvent(inputEvent);
+}
+
+void waitForInput() {
+    WaitForSingleObject(inputEvent, INPUT_WAIT_TIMEOUT_MS);
 }
 
 WindowPositioner::WindowPositioner(HWND hwnd) : hwnd(hwnd), thread(&WindowPositioner::run, this) {}
@@ -61,10 +69,10 @@ WindowPositioner::~WindowPositioner() {
     thread.join();
 }
 
-void WindowPositioner::request(RECT rect) {
+void WindowPositioner::request(RECT rect, ContextType type) {
     {
         std::lock_guard lock(mutex);
-        pending = rect;
+        pending = { rect, type };
     }
     changed.notify_one();
 }
@@ -75,10 +83,15 @@ void WindowPositioner::run() {
         changed.wait(lock, [&] { return pending || stopping; });
         if (!pending) return;
 
-        RECT rect = *pending;
+        auto [rect, type] = *pending;
         pending.reset();
         lock.unlock();
-        moveWindow<RESIZE>(hwnd, rect, false);
+        if (type == MOVE) {
+            moveWindow<MOVE>(hwnd, rect, false);
+        }
+        else {
+            moveWindow<RESIZE>(hwnd, rect, false);
+        }
         lock.lock();
     }
 }
@@ -398,10 +411,6 @@ static void sendKey(WORD vk, bool up) {
     SendInput(1, &in, sizeof(INPUT));
 }
 
-static bool isKeyDown(int vk) {
-    return (GetAsyncKeyState(vk) & 0x8000) != 0;
-}
-
 // Windows only lets a background process take the foreground in some cases; attaching to the
 // current foreground thread's input lets SetForegroundWindow succeed in more of them
 static bool forceForegroundWindow(HWND hWnd) {
@@ -454,7 +463,11 @@ static bool waitForZone(HWND hWnd, Zone expected) {
 // Left/Right snaps to that half and a following Up/Down to that quarter. Top/bottom halves have no
 // shortcut on landscape monitors, so those are snapped to the left half and moved back; the
 // arranged state survives the move.
-static void markWindowArranged(HWND hWnd) {
+void markWindowArranged(HWND hWnd) {
+    static std::mutex marking;
+    std::lock_guard lock(marking);
+    if (!isWindowArranged) return;
+
     Zone target = getZone(hWnd);
     if (!target.halfWidth && !target.halfHeight) return;
     bool left = !target.halfWidth || target.left;
@@ -476,6 +489,10 @@ static void markWindowArranged(HWND hWnd) {
     BOOL disableTransitions = TRUE;
     DwmSetWindowAttribute(hWnd, DWMWA_TRANSITIONS_FORCEDISABLED, &disableTransitions, sizeof(disableTransitions));
 
+    // Keys the user is holding would combine with the shortcuts (Win+Shift+arrow moves the window to
+    // another monitor, Win+Ctrl+arrow switches desktop) and their own Win press would join the
+    // shortcut sequence, so keyboard input is held back meanwhile and replayed afterwards
+    beginKeyboardCapture();
     bool snapped = true;
     sendKey(VK_LWIN, false);
     for (auto [arrow, expected] : steps) {
@@ -485,6 +502,7 @@ static void markWindowArranged(HWND hWnd) {
         if (!snapped) break;
     }
     sendKey(VK_LWIN, true);
+    endKeyboardCapture();
 
     if (snapped && !target.halfWidth) {
         moveWindow<RESIZE>(hWnd, targetRect, false);
@@ -492,50 +510,6 @@ static void markWindowArranged(HWND hWnd) {
 
     disableTransitions = FALSE;
     DwmSetWindowAttribute(hWnd, DWMWA_TRANSITIONS_FORCEDISABLED, &disableTransitions, sizeof(disableTransitions));
-}
-
-// Windows whose last drop was into a zone. They are marked once Win and Shift are released: the
-// shortcuts then get a Win press of their own, which held keys (Win+Shift+arrow moves windows to
-// another monitor) and the user's own Win press cannot interfere with.
-static std::mutex windowsToMarkMutex;
-static std::set<HWND> windowsToMark;
-static bool markerRunning = false;
-
-static DWORD WINAPI MarkWindowsThreadProc(LPVOID) {
-    for (;;) {
-        while (isKeyDown(VK_LWIN) || isKeyDown(VK_RWIN) || isKeyDown(VK_SHIFT)) Sleep(10);
-
-        std::set<HWND> windows;
-        {
-            std::lock_guard lock(windowsToMarkMutex);
-            if (windowsToMark.empty()) {
-                markerRunning = false;
-                return 0;
-            }
-            windows.swap(windowsToMark);
-        }
-        for (HWND hWnd : windows) {
-            if (IsWindow(hWnd) && !(ctx.inProgress && ctx.targetWindow == hWnd)) markWindowArranged(hWnd);
-        }
-    }
-}
-
-void setWindowSnappedToZone(HWND hWnd, bool snapped) {
-    if (!isWindowArranged) return;
-
-    std::lock_guard lock(windowsToMarkMutex);
-    if (!snapped) {
-        windowsToMark.erase(hWnd);
-        return;
-    }
-    windowsToMark.insert(hWnd);
-    if (markerRunning) return;
-
-    HANDLE thread = CreateThread(NULL, 0, MarkWindowsThreadProc, NULL, 0, NULL);
-    if (thread) {
-        markerRunning = true;
-        CloseHandle(thread);
-    }
 }
 
 // Resizing a snapped window works like dragging the lines between snapped windows: only edges

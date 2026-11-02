@@ -97,6 +97,42 @@ void stopWindowOperation() {
 		CloseHandle(ctx.hEvent);
 		ctx.hEvent = NULL;
 	}
+	notifyInput();
+}
+
+enum class ScreenEdge { None, Outer, Inner };
+
+// How close to a shared edge between monitors the cursor has to be to snap there, and how far it
+// can then move away before the snap is dropped, at 96 DPI
+constexpr int INNER_EDGE_BAND = 16;
+constexpr int INNER_EDGE_RELEASE_BAND = 64;
+// How long the cursor has to stay near a shared edge to snap there, so a window dragged across to
+// the other monitor does not snap on its way
+constexpr ULONGLONG INNER_EDGE_DWELL_MS = 150;
+
+// Which kind of monitor edge the cursor is at: pushed against one with no monitor beyond it, or
+// near one shared with another monitor, which the cursor would otherwise just cross
+static ScreenEdge getScreenEdge(POINT pt, int innerBand) {
+	MONITORINFO mi{};
+	mi.cbSize = sizeof(mi);
+	GetMonitorInfo(MonitorFromPoint(pt, MONITOR_DEFAULTTONEAREST), &mi);
+	RECT& screen = mi.rcMonitor;
+	LONG band = MulDiv(innerBand, GetDpiForSystem(), 96);
+
+	struct Side { LONG distance; POINT beyond; };
+	Side sides[] = {
+		{ pt.x - screen.left, { screen.left - 1, pt.y } },
+		{ screen.right - 1 - pt.x, { screen.right, pt.y } },
+		{ pt.y - screen.top, { pt.x, screen.top - 1 } },
+		{ screen.bottom - 1 - pt.y, { pt.x, screen.bottom } },
+	};
+	ScreenEdge edge = ScreenEdge::None;
+	for (auto& [distance, beyond] : sides) {
+		bool shared = MonitorFromPoint(beyond, MONITOR_DEFAULTTONULL) != NULL;
+		if (!shared && distance <= 0) return ScreenEdge::Outer;
+		if (shared && distance < band) edge = ScreenEdge::Inner;
+	}
+	return edge;
 }
 
 DWORD WINAPI WindowOperationThreadProc(LPVOID lpParam) {
@@ -106,25 +142,34 @@ DWORD WINAPI WindowOperationThreadProc(LPVOID lpParam) {
 		SetGlobalCursor<SIZEALL>();
 		WINDOWPLACEMENT wp = { sizeof(WINDOWPLACEMENT) };
 		POINT pt;
-		bool wasShiftDown = false;
+		bool wasInZoneMode = false;
 		bool snappedToZone = false;
 		bool dragStarted = false;
+		// Like Windows, pushing the window against a screen edge snaps it, but only once the drag has
+		// been away from the edges, so a drag that starts there (such as on a maximized window's
+		// title bar) does not snap right away
+		bool leftScreenEdges = false;
+		ULONGLONG innerEdgeSince = 0;
+		bool snappedAtInnerEdge = false;
 
 		// Every placement of the window goes through here: with "Show window contents while
 		// dragging" off, an outline moves instead and the window takes its last place at the end
 		std::optional<DragOutline> outline;
-		if (!showWindowContentsWhileDragging()) outline.emplace(ctx.targetWindow);
+		std::optional<WindowPositioner> positioner;
+		if (showWindowContentsWhileDragging()) {
+			positioner.emplace(ctx.targetWindow);
+		}
+		else {
+			outline.emplace(ctx.targetWindow);
+		}
 		std::optional<RECT> placed;
 		auto place = [&](RECT rect, ContextType type) {
 			placed = rect;
 			if (outline) {
 				outline->move(rect);
 			}
-			else if (type == MOVE) {
-				moveWindow<MOVE>(ctx.targetWindow, rect);
-			}
 			else {
-				moveWindow<RESIZE>(ctx.targetWindow, rect);
+				positioner->request(rect, type);
 			}
 		};
 
@@ -148,40 +193,47 @@ DWORD WINAPI WindowOperationThreadProc(LPVOID lpParam) {
 				}
 			}
 
-			// Check SHIFT
-			bool shiftDown = (GetAsyncKeyState(VK_SHIFT) & 0x8000) != 0;
+			// Holding Shift, pushing against a screen edge or resting near an edge shared with another
+			// monitor snaps to zones
+			ScreenEdge edge = getScreenEdge(pt, snappedAtInnerEdge ? INNER_EDGE_RELEASE_BAND : INNER_EDGE_BAND);
+			ULONGLONG now = GetTickCount64();
+			if (edge == ScreenEdge::None) leftScreenEdges = true;
+			if (edge != ScreenEdge::Inner) innerEdgeSince = 0;
+			else if (!innerEdgeSince) innerEdgeSince = now;
+			bool atSnapEdge = leftScreenEdges &&
+				(edge == ScreenEdge::Outer || (edge == ScreenEdge::Inner && now - innerEdgeSince >= INNER_EDGE_DWELL_MS));
+			snappedAtInnerEdge = atSnapEdge && edge == ScreenEdge::Inner;
+			bool zoneMode = (GetAsyncKeyState(VK_SHIFT) & 0x8000) || atSnapEdge;
 
-			// If SHIFT is down, we want to force-restore a maximized window
-			if (shiftDown) {
-				wasShiftDown = true;
+			// In zone mode, a maximized window is restored first
+			if (zoneMode) {
+				wasInZoneMode = true;
 				// If window currently maximized, un-maximize it so we can do a "normal" snap
 				if (maximized) {
 					// Update our tracking rect to the newly-restored size
 					GetWindowRect(ctx.targetWindow, &currentWindowRect);
 				}
 
-				// SHIFT is pressed => do fancy zones
 				HMONITOR screen = SysGetMonitorContainingPoint(pt.x, pt.y);
 				std::optional<RECT> zoneRect = getFancyZoneRect(ctx.targetWindow, screen, pt, maximized);
 				snappedToZone = zoneRect.has_value();
 				if (zoneRect) place(*zoneRect, RESIZE);
 			}
 			else {
-				if (wasShiftDown) {
-					wasShiftDown = false;
+				if (wasInZoneMode) {
+					wasInZoneMode = false;
 					snappedToZone = false;
 					RECT newRect = ctx.startWindowRect;
 					OffsetRect(&newRect, dx, dy);
 					place(newRect, RESIZE);
 				}
-				// SHIFT is not pressed:
 				if (maximized) {
 					// Option A: Just re-snap to the monitor so user can
 					// "drag" the window across monitors even while maximized
 					HMONITOR screen = SysGetMonitorContainingPoint(pt.x, pt.y);
 					snapToMonitor(ctx.targetWindow, screen);
 				}
-				else {
+				else if (dragStarted) {
 					RECT rect = currentWindowRect;
 					rect.left += dx;
 					rect.right += dx;
@@ -192,14 +244,15 @@ DWORD WINAPI WindowOperationThreadProc(LPVOID lpParam) {
 			}
 
 			pumpMessages();
-			waitForNextFrame();
+			waitForInput();
 		}
 
+		positioner.reset();
 		if (outline) {
 			outline.reset();
 			if (placed) moveWindow<RESIZE>(ctx.targetWindow, *placed, false);
 		}
-		setWindowSnappedToZone(ctx.targetWindow, snappedToZone);
+		if (snappedToZone) markWindowArranged(ctx.targetWindow);
 	}
 
 	else if (ctx.operationType == RESIZE) {
@@ -306,7 +359,7 @@ DWORD WINAPI WindowOperationThreadProc(LPVOID lpParam) {
 			}
 
 			pumpMessages();
-			waitForNextFrame();
+			waitForInput();
 		}
 
 		if (!showContents) {

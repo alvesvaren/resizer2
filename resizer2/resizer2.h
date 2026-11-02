@@ -106,7 +106,11 @@ void stopWindowOperation();
 HWND getTopLevelParent(HWND hwnd);
 void snapToMonitor(HWND window, HMONITOR screen);
 std::optional<RECT> getFancyZoneRect(HWND hWnd, HMONITOR hMon, POINT mousePos, bool maximized);
-void setWindowSnappedToZone(HWND hWnd, bool snapped);
+void markWindowArranged(HWND hWnd);
+// Holds back physical keyboard input with modifiers released, and afterwards restores the
+// modifiers to their physical state and replays the input
+void beginKeyboardCapture();
+void endKeyboardCapture();
 bool unsnapWindow(HWND hWnd, POINT grab, RECT& rect);
 struct ResizeParticipant {
     HWND hwnd;

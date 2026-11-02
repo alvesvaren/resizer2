@@ -16,15 +16,24 @@ void EnsureHooksInstalled() {
     }
 }
 
+static DWORD lastWinDownTick = 0;
+
+// Keep modifier state in sync with either Win key being held, in case a key-up was missed.
+// The async key state is only updated after all low-level hooks have run, so right after a
+// Win key-down it still reads as up; trust the hook event until key repeat would have kicked in.
+static void syncModKeyState() {
+    if (modKeyPressed &&
+        GetTickCount() - lastWinDownTick > 1000 &&
+        (GetAsyncKeyState(VK_LWIN) & 0x8000) == 0 &&
+        (GetAsyncKeyState(VK_RWIN) & 0x8000) == 0) {
+        modKeyPressed = false;
+    }
+}
+
 LRESULT CALLBACK LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lParam) {
     KBDLLHOOKSTRUCT* pKbDllHookStruct = (KBDLLHOOKSTRUCT*)lParam;
     if (nCode == HC_ACTION) {
-        // Keep modifier state in sync with either Win key being held
-        if (modKeyPressed &&
-            (GetAsyncKeyState(VK_LWIN) & 0x8000) == 0 &&
-            (GetAsyncKeyState(VK_RWIN) & 0x8000) == 0) {
-            modKeyPressed = false;
-        }
+        syncModKeyState();
 
         if (pKbDllHookStruct->vkCode == VK_LWIN || pKbDllHookStruct->vkCode == VK_RWIN) {
             if (wParam == WM_KEYDOWN || wParam == WM_SYSKEYDOWN) {
@@ -32,6 +41,7 @@ LRESULT CALLBACK LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lParam) {
                     didUseWindowsKey = false;
                 }
                 modKeyPressed = true;
+                lastWinDownTick = GetTickCount();
             }
             else if (wParam == WM_KEYUP || wParam == WM_SYSKEYUP) {
                 modKeyPressed = false;
@@ -57,11 +67,7 @@ LRESULT CALLBACK LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lParam) {
 LRESULT CALLBACK LowLevelMouseProc(int nCode, WPARAM wParam, LPARAM lParam) {
     MSLLHOOKSTRUCT* pMsLlHookStruct = (MSLLHOOKSTRUCT*)lParam;
     if (nCode == HC_ACTION) {
-        if (modKeyPressed &&
-            (GetAsyncKeyState(VK_LWIN) & 0x8000) == 0 &&
-            (GetAsyncKeyState(VK_RWIN) & 0x8000) == 0) {
-            modKeyPressed = false;
-        }
+        syncModKeyState();
 
         switch (wParam) {
         case WM_MOUSEWHEEL: {

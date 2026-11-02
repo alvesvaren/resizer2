@@ -30,7 +30,7 @@ constexpr int DOUBLE_CLICK_THRESHOLD = 300; // ms
 constexpr BYTE MIN_OPACITY = 64;
 constexpr BYTE MAX_OPACITY = 255;
 constexpr BYTE OPACITY_STEP = 26; // Around 10% of 255
-constexpr int DUMMY_KEY = VK_LSHIFT; // Any key that doesn't do anything when pressed together with the Windows key, shift makes sense because it's already used for snapping
+constexpr int DUMMY_KEY = 0xE8; // Unassigned virtual key: stops the Start menu opening without taking part in Win+Shift+arrow shortcuts
 constexpr double CORNER_RADIUS_FRACTION = 0.33; // 1/3 of monitor dimension
 
 const std::unordered_set<std::wstring> disallowedClasses{
@@ -70,6 +70,8 @@ enum ResizerCursor {
     SIZEALL,
     SIZENWSE,
     SIZENESW,
+    SIZEWE,
+    SIZENS,
     UNSET,
 };
 
@@ -102,7 +104,16 @@ void startWindowOperation();
 void stopWindowOperation();
 HWND getTopLevelParent(HWND hwnd);
 void snapToMonitor(HWND window, HMONITOR screen);
-void snapToFancyZone(HWND hWnd, HMONITOR hMon, POINT mousePos, bool maximized);
+bool snapToFancyZone(HWND hWnd, HMONITOR hMon, POINT mousePos, bool maximized);
+void setWindowSnappedToZone(HWND hWnd, bool snapped);
+bool unsnapWindow(HWND hWnd, POINT grab, RECT& rect);
+struct ResizeParticipant {
+    HWND hwnd;
+    RECT start;
+    LONG RECT::* xEdge; // edge that follows the mouse horizontally, if any
+    LONG RECT::* yEdge; // edge that follows the mouse vertically, if any
+};
+std::vector<ResizeParticipant> getResizeParticipants(HWND hWnd, LONG RECT::* xEdge, LONG RECT::* yEdge);
 template <ResizerCursor cursor>
 void SetGlobalCursor();
 void AddTrayIcon(HWND hWnd);

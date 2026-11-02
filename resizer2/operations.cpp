@@ -107,6 +107,8 @@ DWORD WINAPI WindowOperationThreadProc(LPVOID lpParam) {
 		WINDOWPLACEMENT wp = { sizeof(WINDOWPLACEMENT) };
 		POINT pt;
 		bool wasShiftDown = false;
+		bool snappedToZone = false;
+		bool dragStarted = false;
 
 		while (ctx.inProgress) {
 			if (WaitForSingleObject(ctx.hEvent, 0) == WAIT_OBJECT_0) {
@@ -120,6 +122,13 @@ DWORD WINAPI WindowOperationThreadProc(LPVOID lpParam) {
 
 			int dx = pt.x - ctx.startMousePos.x;
 			int dy = pt.y - ctx.startMousePos.y;
+
+			if (!dragStarted && (abs(dx) > GetSystemMetrics(SM_CXDRAG) || abs(dy) > GetSystemMetrics(SM_CYDRAG))) {
+				dragStarted = true;
+				if (unsnapWindow(ctx.targetWindow, ctx.startMousePos, currentWindowRect)) {
+					ctx.startWindowRect = currentWindowRect;
+				}
+			}
 
 			// Check SHIFT
 			bool shiftDown = (GetAsyncKeyState(VK_SHIFT) & 0x8000) != 0;
@@ -135,11 +144,12 @@ DWORD WINAPI WindowOperationThreadProc(LPVOID lpParam) {
 
 				// SHIFT is pressed => do fancy zones
 				HMONITOR screen = SysGetMonitorContainingPoint(pt.x, pt.y);
-				snapToFancyZone(ctx.targetWindow, screen, pt, maximized);
+				snappedToZone = snapToFancyZone(ctx.targetWindow, screen, pt, maximized);
 			}
 			else {
 				if (wasShiftDown) {
 					wasShiftDown = false;
+					snappedToZone = false;
 					RECT newRect = ctx.startWindowRect;
 					OffsetRect(&newRect, dx, dy);
 					moveWindow<RESIZE>(ctx.targetWindow, newRect);
@@ -162,29 +172,28 @@ DWORD WINAPI WindowOperationThreadProc(LPVOID lpParam) {
 				}
 			}
 
-			Sleep(1);
+			waitForNextFrame();
 		}
+
+		setWindowSnappedToZone(ctx.targetWindow, snappedToZone);
 	}
 
 	else if (ctx.operationType == RESIZE) {
-		bool isLeft = false, isTop = false;
-		int windowWidth = currentWindowRect.right - currentWindowRect.left;
-		int windowHeight = currentWindowRect.bottom - currentWindowRect.top;
-
-		// Determine which corner is nearest
-		if (ctx.startMousePos.x - currentWindowRect.left < windowWidth / 2)
-			isLeft = true;
-		if (ctx.startMousePos.y - currentWindowRect.top < windowHeight / 2)
-			isTop = true;
-
-		bool nwse = (isLeft && isTop) || (!isLeft && !isTop);
-
-		if (nwse) {
-			SetGlobalCursor<SIZENWSE>();
-		}
-		else {
-			SetGlobalCursor<SIZENESW>();
-		}
+		// Each axis is split into thirds: grabbing an outer third moves that edge, the middle third
+		// leaves the axis alone. Grabbing the very middle resizes along whichever axis the drag
+		// starts in, from the nearest edge on that axis.
+		RECT grabRect = currentWindowRect;
+		auto outerEdge = [](LONG grab, LONG low, LONG high, LONG RECT::* lowEdge, LONG RECT::* highEdge) -> LONG RECT::* {
+			LONG third = (high - low) / 3;
+			if (grab < low + third) return lowEdge;
+			if (grab >= high - third) return highEdge;
+			return nullptr;
+		};
+		auto nearestEdge = [](LONG grab, LONG low, LONG high, LONG RECT::* lowEdge, LONG RECT::* highEdge) {
+			return grab < (low + high) / 2 ? lowEdge : highEdge;
+		};
+		LONG RECT::* xEdge = outerEdge(ctx.startMousePos.x, grabRect.left, grabRect.right, &RECT::left, &RECT::right);
+		LONG RECT::* yEdge = outerEdge(ctx.startMousePos.y, grabRect.top, grabRect.bottom, &RECT::top, &RECT::bottom);
 
 		// Restore window if maximized
 		WINDOWPLACEMENT wp = { sizeof(WINDOWPLACEMENT) };
@@ -193,6 +202,37 @@ DWORD WINAPI WindowOperationThreadProc(LPVOID lpParam) {
 			ShowWindow(ctx.targetWindow, SW_RESTORE);
 		}
 
+		std::vector<ResizeParticipant> participants;
+		std::vector<std::unique_ptr<WindowPositioner>> positioners;
+		auto beginResize = [&] {
+			if (!yEdge) {
+				SetGlobalCursor<SIZEWE>();
+			}
+			else if (!xEdge) {
+				SetGlobalCursor<SIZENS>();
+			}
+			else if ((xEdge == &RECT::left) == (yEdge == &RECT::top)) {
+				SetGlobalCursor<SIZENWSE>();
+			}
+			else {
+				SetGlobalCursor<SIZENESW>();
+			}
+
+			participants = getResizeParticipants(ctx.targetWindow, xEdge, yEdge);
+			for (auto& participant : participants) {
+				positioners.push_back(std::make_unique<WindowPositioner>(participant.hwnd));
+			}
+		};
+
+		bool resizing = xEdge || yEdge;
+		if (resizing) {
+			beginResize();
+		}
+		else {
+			SetGlobalCursor<SIZEALL>();
+		}
+
+		POINT lastPt = ctx.startMousePos;
 		while (ctx.inProgress) {
 			if (WaitForSingleObject(ctx.hEvent, 0) == WAIT_OBJECT_0) {
 				break;
@@ -202,23 +242,29 @@ DWORD WINAPI WindowOperationThreadProc(LPVOID lpParam) {
 			int dx = pt.x - ctx.startMousePos.x;
 			int dy = pt.y - ctx.startMousePos.y;
 
-			RECT newRect = currentWindowRect;
-			if (isLeft) {
-				newRect.left += dx;
-			}
-			else {
-				newRect.right += dx;
-			}
-			if (isTop) {
-				newRect.top += dy;
-			}
-			else {
-				newRect.bottom += dy;
+			if (!resizing && (abs(dx) > GetSystemMetrics(SM_CXDRAG) || abs(dy) > GetSystemMetrics(SM_CYDRAG))) {
+				if (abs(dx) >= abs(dy)) {
+					xEdge = nearestEdge(ctx.startMousePos.x, grabRect.left, grabRect.right, &RECT::left, &RECT::right);
+				}
+				else {
+					yEdge = nearestEdge(ctx.startMousePos.y, grabRect.top, grabRect.bottom, &RECT::top, &RECT::bottom);
+				}
+				resizing = true;
+				beginResize();
 			}
 
-			moveWindow<RESIZE>(ctx.targetWindow, newRect, false);
+			if (resizing && (pt.x != lastPt.x || pt.y != lastPt.y)) {
+				lastPt = pt;
+				for (size_t i = 0; i < participants.size(); i++) {
+					auto& [hwnd, start, movingX, movingY] = participants[i];
+					RECT newRect = start;
+					if (movingX) newRect.*movingX += dx;
+					if (movingY) newRect.*movingY += dy;
+					positioners[i]->request(newRect);
+				}
+			}
 
-			Sleep(1);
+			waitForNextFrame();
 		}
 	}
 

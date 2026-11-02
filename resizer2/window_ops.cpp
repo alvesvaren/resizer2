@@ -176,22 +176,27 @@ static MONITORINFO getMonitorInfo(HWND hWnd) {
 }
 
 // When the other side of the screen already holds a snapped window, Windows snaps a new window
-// into the space next to it instead of the exact half. Predict that, so the window does not jump
-// when the zone is snapped natively.
-static void fitZoneToSnappedNeighbour(HWND hWnd, const RECT& work, RECT& zone) {
-    if (zone.right - zone.left >= work.right - work.left) return;
+// into the space next to it instead of the exact half. Predict that along both axes, so the window
+// does not jump when the zone is snapped natively.
+static void fitZoneToSnappedNeighbours(HWND hWnd, const RECT& work, RECT& zone) {
+    auto snapped = getSnappedWindows(MonitorFromRect(&work, MONITOR_DEFAULTTONEAREST), hWnd);
+    auto fitAxis = [&](LONG RECT::* low, LONG RECT::* high, LONG RECT::* crossLow, LONG RECT::* crossHigh) {
+        if (zone.*high - zone.*low >= work.*high - work.*low) return;
 
-    for (auto& [other, frame] : getSnappedWindows(MonitorFromRect(&work, MONITOR_DEFAULTTONEAREST), hWnd)) {
-        if (frame.top >= zone.bottom || frame.bottom <= zone.top) continue;
-        if (zone.left == work.left && touches(frame.right, work.right) && frame.left > zone.left) {
-            zone.right = frame.left;
-            return;
+        for (auto& [other, frame] : snapped) {
+            if (frame.*crossLow >= zone.*crossHigh || frame.*crossHigh <= zone.*crossLow) continue;
+            if (zone.*low == work.*low && touches(frame.*high, work.*high) && frame.*low > zone.*low) {
+                zone.*high = frame.*low;
+                return;
+            }
+            if (zone.*high == work.*high && touches(frame.*low, work.*low) && frame.*high < zone.*high) {
+                zone.*low = frame.*high;
+                return;
+            }
         }
-        if (zone.right == work.right && touches(frame.left, work.left) && frame.right < zone.right) {
-            zone.left = frame.right;
-            return;
-        }
-    }
+    };
+    fitAxis(&RECT::left, &RECT::right, &RECT::top, &RECT::bottom);
+    fitAxis(&RECT::top, &RECT::bottom, &RECT::left, &RECT::right);
 }
 
 bool snapToFancyZone(HWND hWnd, HMONITOR hMon, POINT mousePos, bool maximized)
@@ -282,7 +287,7 @@ bool snapToFancyZone(HWND hWnd, HMONITOR hMon, POINT mousePos, bool maximized)
     }
 
     if (shouldMove) {
-        fitZoneToSnappedNeighbour(hWnd, mi.rcWork, newRect);
+        fitZoneToSnappedNeighbours(hWnd, mi.rcWork, newRect);
 
         // Expand to include DWM frame so the visible frame fits the zone exactly
         RECT currentWindowRect{};

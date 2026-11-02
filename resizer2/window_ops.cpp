@@ -69,10 +69,10 @@ WindowPositioner::~WindowPositioner() {
     thread.join();
 }
 
-void WindowPositioner::request(RECT rect, ContextType type) {
+void WindowPositioner::request(RECT rect) {
     {
         std::lock_guard lock(mutex);
-        pending = { rect, type };
+        pending = rect;
     }
     changed.notify_one();
 }
@@ -83,15 +83,10 @@ void WindowPositioner::run() {
         changed.wait(lock, [&] { return pending || stopping; });
         if (!pending) return;
 
-        auto [rect, type] = *pending;
+        RECT rect = *pending;
         pending.reset();
         lock.unlock();
-        if (type == MOVE) {
-            moveWindow<MOVE>(hwnd, rect, false);
-        }
-        else {
-            moveWindow<RESIZE>(hwnd, rect, false);
-        }
+        moveWindow<RESIZE>(hwnd, rect, false);
         lock.lock();
     }
 }
@@ -300,88 +295,30 @@ std::optional<RECT> getFancyZoneRect(HWND hWnd, HMONITOR hMon, POINT mousePos, b
     mi.cbSize = sizeof(mi);
     if (!GetMonitorInfo(hMon, &mi)) return std::nullopt;
 
-    int monWidth = mi.rcWork.right - mi.rcWork.left;
-    int monHeight = mi.rcWork.bottom - mi.rcWork.top;
-
-    POINT tlCorner = { mi.rcWork.left,  mi.rcWork.top };
-    POINT trCorner = { mi.rcWork.right, mi.rcWork.top };
-    POINT blCorner = { mi.rcWork.left,  mi.rcWork.bottom };
-    POINT brCorner = { mi.rcWork.right, mi.rcWork.bottom };
-
-    double radius = CORNER_RADIUS_FRACTION * min(monWidth, monHeight);
-
-    auto dist = [](POINT a, POINT b) {
-        double dx = double(a.x - b.x);
-        double dy = double(a.y - b.y);
-        return sqrt(dx * dx + dy * dy);
-    };
-
-    double distTL = dist(mousePos, tlCorner);
-    double distTR = dist(mousePos, trCorner);
-    double distBL = dist(mousePos, blCorner);
-    double distBR = dist(mousePos, brCorner);
-
-    int centerX = mi.rcWork.left + monWidth / 2;
-    int centerY = mi.rcWork.top + monHeight / 2;
-
     if (maximized) {
         ShowWindow(hWnd, SW_RESTORE);
     }
 
-    RECT newRect = mi.rcWork;
-    bool shouldMove = false;
+    // The work area is split into a 3x3 grid, like the resize grab areas: corner cells snap to that
+    // quarter, edge cells to that half, and the middle cell does not snap
+    const RECT& work = mi.rcWork;
+    auto third = [](LONG position, LONG low, LONG high) {
+        LONG size = (high - low) / 3;
+        if (position < low + size) return -1;
+        if (position >= high - size) return 1;
+        return 0;
+    };
+    int column = third(mousePos.x, work.left, work.right);
+    int row = third(mousePos.y, work.top, work.bottom);
+    if (column == 0 && row == 0) return std::nullopt;
 
-    if (distTL <= radius) {
-        newRect.right -= monWidth / 2;
-        newRect.bottom -= monHeight / 2;
-        shouldMove = true;
-    }
-    else if (distTR <= radius) {
-        newRect.left += monWidth / 2;
-        newRect.bottom -= monHeight / 2;
-        shouldMove = true;
-    }
-    else if (distBL <= radius) {
-        newRect.right -= monWidth / 2;
-        newRect.top += monHeight / 2;
-        shouldMove = true;
-    }
-    else if (distBR <= radius) {
-        newRect.left += monWidth / 2;
-        newRect.top += monHeight / 2;
-        shouldMove = true;
-    }
-    else {
-        int oneThirdY = mi.rcWork.top + (monHeight / 3);
-        int twoThirdY = mi.rcWork.top + 2 * (monHeight / 3);
-
-        if ((mousePos.y > oneThirdY) && (mousePos.y < twoThirdY))
-        {
-            if (mousePos.x < centerX) {
-                newRect.right -= monWidth / 2;
-            }
-            else {
-                newRect.left += monWidth / 2;
-            }
-            shouldMove = true;
-        }
-
-        int oneThirdX = mi.rcWork.left + (monWidth / 3);
-        int twoThirdX = mi.rcWork.left + 2 * (monWidth / 3);
-
-        if ((mousePos.x > oneThirdX) && (mousePos.x < twoThirdX))
-        {
-            if (mousePos.y < centerY) {
-                newRect.bottom -= monHeight / 2;
-            }
-            else {
-                newRect.top += monHeight / 2;
-            }
-            shouldMove = true;
-        }
-    }
-
-    if (!shouldMove) return std::nullopt;
+    LONG middleX = work.left + (work.right - work.left) / 2;
+    LONG middleY = work.top + (work.bottom - work.top) / 2;
+    RECT newRect = work;
+    if (column < 0) newRect.right = middleX;
+    if (column > 0) newRect.left = middleX;
+    if (row < 0) newRect.bottom = middleY;
+    if (row > 0) newRect.top = middleY;
 
     fitZoneToSnappedNeighbours(hWnd, mi.rcWork, newRect);
 

@@ -14,7 +14,9 @@ HWND getTopLevelParent(HWND hwnd);
 bool isWindowAllowed(HWND win);
 RECT getWindowFrameBounds(HWND hWnd);
 void snapToMonitor(HWND window, HMONITOR screen);
-void snapToFancyZone(HWND hWnd, HMONITOR hMon, POINT mousePos, bool maximized);
+bool snapToFancyZone(HWND hWnd, HMONITOR hMon, POINT mousePos, bool maximized);
+void setWindowSnappedToZone(HWND hWnd, bool snapped);
+bool unsnapWindow(HWND hWnd, POINT grab, RECT& rect);
 
 template <ContextType type>
 void moveWindow(HWND hwnd, RECT rect, bool async = true);

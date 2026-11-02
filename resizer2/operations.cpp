@@ -107,6 +107,8 @@ DWORD WINAPI WindowOperationThreadProc(LPVOID lpParam) {
 		WINDOWPLACEMENT wp = { sizeof(WINDOWPLACEMENT) };
 		POINT pt;
 		bool wasShiftDown = false;
+		bool snappedToZone = false;
+		bool dragStarted = false;
 
 		while (ctx.inProgress) {
 			if (WaitForSingleObject(ctx.hEvent, 0) == WAIT_OBJECT_0) {
@@ -120,6 +122,13 @@ DWORD WINAPI WindowOperationThreadProc(LPVOID lpParam) {
 
 			int dx = pt.x - ctx.startMousePos.x;
 			int dy = pt.y - ctx.startMousePos.y;
+
+			if (!dragStarted && (abs(dx) > GetSystemMetrics(SM_CXDRAG) || abs(dy) > GetSystemMetrics(SM_CYDRAG))) {
+				dragStarted = true;
+				if (unsnapWindow(ctx.targetWindow, ctx.startMousePos, currentWindowRect)) {
+					ctx.startWindowRect = currentWindowRect;
+				}
+			}
 
 			// Check SHIFT
 			bool shiftDown = (GetAsyncKeyState(VK_SHIFT) & 0x8000) != 0;
@@ -135,11 +144,12 @@ DWORD WINAPI WindowOperationThreadProc(LPVOID lpParam) {
 
 				// SHIFT is pressed => do fancy zones
 				HMONITOR screen = SysGetMonitorContainingPoint(pt.x, pt.y);
-				snapToFancyZone(ctx.targetWindow, screen, pt, maximized);
+				snappedToZone = snapToFancyZone(ctx.targetWindow, screen, pt, maximized);
 			}
 			else {
 				if (wasShiftDown) {
 					wasShiftDown = false;
+					snappedToZone = false;
 					RECT newRect = ctx.startWindowRect;
 					OffsetRect(&newRect, dx, dy);
 					moveWindow<RESIZE>(ctx.targetWindow, newRect);
@@ -164,6 +174,8 @@ DWORD WINAPI WindowOperationThreadProc(LPVOID lpParam) {
 
 			Sleep(1);
 		}
+
+		setWindowSnappedToZone(ctx.targetWindow, snappedToZone);
 	}
 
 	else if (ctx.operationType == RESIZE) {

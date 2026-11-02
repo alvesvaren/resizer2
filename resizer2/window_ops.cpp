@@ -1,4 +1,6 @@
 #include "window_ops.h"
+#include <mutex>
+#include <set>
 
 const std::array<int, 13> systemCursors{{
     OCR_NORMAL,
@@ -93,11 +95,11 @@ void snapToMonitor(HWND window, HMONITOR screen) {
     ShowWindow(window, SW_MAXIMIZE);
 }
 
-void snapToFancyZone(HWND hWnd, HMONITOR hMon, POINT mousePos, bool maximized)
+bool snapToFancyZone(HWND hWnd, HMONITOR hMon, POINT mousePos, bool maximized)
 {
     MONITORINFO mi{};
     mi.cbSize = sizeof(mi);
-    if (!GetMonitorInfo(hMon, &mi)) return;
+    if (!GetMonitorInfo(hMon, &mi)) return false;
 
     int monWidth = mi.rcWork.right - mi.rcWork.left;
     int monHeight = mi.rcWork.bottom - mi.rcWork.top;
@@ -199,6 +201,189 @@ void snapToFancyZone(HWND hWnd, HMONITOR hMon, POINT mousePos, bool maximized)
 
         moveWindow<RESIZE>(hWnd, targetOuter);
     }
+    return shouldMove;
+}
+
+typedef BOOL(WINAPI* IsWindowArranged_t)(HWND);
+static const IsWindowArranged_t isWindowArranged =
+    (IsWindowArranged_t)GetProcAddress(GetModuleHandleW(L"user32.dll"), "IsWindowArranged");
+
+static void sendKey(WORD vk, bool up) {
+    INPUT in{};
+    in.type = INPUT_KEYBOARD;
+    in.ki.wVk = vk;
+    in.ki.dwFlags = KEYEVENTF_EXTENDEDKEY | (up ? KEYEVENTF_KEYUP : 0);
+    SendInput(1, &in, sizeof(INPUT));
+}
+
+static bool isKeyDown(int vk) {
+    return (GetAsyncKeyState(vk) & 0x8000) != 0;
+}
+
+// Windows only lets a background process take the foreground in some cases; attaching to the
+// current foreground thread's input lets SetForegroundWindow succeed in more of them
+static bool forceForegroundWindow(HWND hWnd) {
+    HWND foreground = GetForegroundWindow();
+    if (foreground == hWnd) return true;
+
+    DWORD foregroundThread = GetWindowThreadProcessId(foreground, NULL);
+    DWORD currentThread = GetCurrentThreadId();
+    bool attached = foregroundThread != 0 && foregroundThread != currentThread &&
+        AttachThreadInput(currentThread, foregroundThread, TRUE);
+    SetForegroundWindow(hWnd);
+    BringWindowToTop(hWnd);
+    if (attached) AttachThreadInput(currentThread, foregroundThread, FALSE);
+
+    for (int elapsed = 0; elapsed < 100 && GetForegroundWindow() != hWnd; elapsed += 5) {
+        Sleep(5);
+    }
+    return GetForegroundWindow() == hWnd;
+}
+
+// Which part of its monitor's work area a window covers, judged from its visible frame. A side
+// that spans the whole work area has no position, so left/top are false there and zones compare
+// with plain equality.
+struct Zone {
+    bool halfWidth, halfHeight, left, top;
+    bool operator==(const Zone&) const = default;
+};
+
+static Zone getZone(HWND hWnd) {
+    RECT frame = getWindowFrameBounds(hWnd);
+    MONITORINFO mi{};
+    mi.cbSize = sizeof(mi);
+    GetMonitorInfo(MonitorFromWindow(hWnd, MONITOR_DEFAULTTONEAREST), &mi);
+    RECT& work = mi.rcWork;
+    bool halfWidth = (frame.right - frame.left) < (work.right - work.left) * 3 / 4;
+    bool halfHeight = (frame.bottom - frame.top) < (work.bottom - work.top) * 3 / 4;
+    return {
+        halfWidth,
+        halfHeight,
+        halfWidth && (frame.left + frame.right) / 2 < (work.left + work.right) / 2,
+        halfHeight && (frame.top + frame.bottom) / 2 < (work.top + work.bottom) / 2,
+    };
+}
+
+static bool waitForZone(HWND hWnd, Zone expected) {
+    for (int elapsed = 0; elapsed < 500; elapsed += 5) {
+        Sleep(5);
+        if (isWindowArranged(hWnd) && getZone(hWnd) == expected) return true;
+    }
+    return false;
+}
+
+// Windows only treats a window as snapped ("arranged") when the shell snapped it itself, and only
+// then does it get shared-edge resizing with its neighbours. There is no API to set that state, so
+// recreate the zone with the Win+arrow shortcuts, as one Win press: from an unsnapped window,
+// Left/Right snaps to that half and a following Up/Down to that quarter. Top/bottom halves have no
+// shortcut on landscape monitors, so those are snapped to the left half and moved back; the
+// arranged state survives the move.
+static void markWindowArranged(HWND hWnd) {
+    Zone target = getZone(hWnd);
+    if (!target.halfWidth && !target.halfHeight) return;
+    bool left = !target.halfWidth || target.left;
+    RECT targetRect{};
+    GetWindowRect(hWnd, &targetRect);
+
+    // Win+arrow acts on the foreground window, so nothing is sent unless that is our window
+    if (!forceForegroundWindow(hWnd)) return;
+
+    // Start from an unsnapped window, where the shortcuts always have the same effect
+    if (isWindowArranged(hWnd)) ShowWindow(hWnd, SW_RESTORE);
+
+    std::vector<std::pair<WORD, Zone>> steps = {
+        { left ? VK_LEFT : VK_RIGHT, Zone{ true, false, left, false } },
+    };
+    if (target.halfWidth && target.halfHeight) steps.push_back({ target.top ? VK_UP : VK_DOWN, target });
+
+    // The window is already where it should end up, so hide the shell's snap animation
+    BOOL disableTransitions = TRUE;
+    DwmSetWindowAttribute(hWnd, DWMWA_TRANSITIONS_FORCEDISABLED, &disableTransitions, sizeof(disableTransitions));
+
+    bool snapped = true;
+    sendKey(VK_LWIN, false);
+    for (auto [arrow, expected] : steps) {
+        sendKey(arrow, false);
+        sendKey(arrow, true);
+        snapped = waitForZone(hWnd, expected);
+        if (!snapped) break;
+    }
+    sendKey(VK_LWIN, true);
+
+    if (snapped && !target.halfWidth) {
+        moveWindow<RESIZE>(hWnd, targetRect, false);
+    }
+
+    disableTransitions = FALSE;
+    DwmSetWindowAttribute(hWnd, DWMWA_TRANSITIONS_FORCEDISABLED, &disableTransitions, sizeof(disableTransitions));
+}
+
+// Windows whose last drop was into a zone. They are marked once Win and Shift are released: the
+// shortcuts then get a Win press of their own, which held keys (Win+Shift+arrow moves windows to
+// another monitor) and the user's own Win press cannot interfere with.
+static std::mutex windowsToMarkMutex;
+static std::set<HWND> windowsToMark;
+static bool markerRunning = false;
+
+static DWORD WINAPI MarkWindowsThreadProc(LPVOID) {
+    for (;;) {
+        while (isKeyDown(VK_LWIN) || isKeyDown(VK_RWIN) || isKeyDown(VK_SHIFT)) Sleep(10);
+
+        std::set<HWND> windows;
+        {
+            std::lock_guard lock(windowsToMarkMutex);
+            if (windowsToMark.empty()) {
+                markerRunning = false;
+                return 0;
+            }
+            windows.swap(windowsToMark);
+        }
+        for (HWND hWnd : windows) {
+            if (IsWindow(hWnd) && !(ctx.inProgress && ctx.targetWindow == hWnd)) markWindowArranged(hWnd);
+        }
+    }
+}
+
+void setWindowSnappedToZone(HWND hWnd, bool snapped) {
+    if (!isWindowArranged) return;
+
+    std::lock_guard lock(windowsToMarkMutex);
+    if (!snapped) {
+        windowsToMark.erase(hWnd);
+        return;
+    }
+    windowsToMark.insert(hWnd);
+    if (markerRunning) return;
+
+    HANDLE thread = CreateThread(NULL, 0, MarkWindowsThreadProc, NULL, 0, NULL);
+    if (thread) {
+        markerRunning = true;
+        CloseHandle(thread);
+    }
+}
+
+// Like a native drag: moving a snapped window un-snaps it and gives back its pre-snap size, with the
+// cursor kept at the same relative spot on the window. Updates rect to the restored window's position.
+bool unsnapWindow(HWND hWnd, POINT grab, RECT& rect) {
+    if (!isWindowArranged || !isWindowArranged(hWnd)) return false;
+
+    RECT before{};
+    GetWindowRect(hWnd, &before);
+    ShowWindow(hWnd, SW_RESTORE);
+    RECT after{};
+    GetWindowRect(hWnd, &after);
+
+    int width = after.right - after.left;
+    int height = after.bottom - after.top;
+    double grabFraction = double(grab.x - before.left) / max(1, before.right - before.left);
+    int grabOffsetY = min(max(0, (int)(grab.y - before.top)), height - 1);
+
+    rect.left = grab.x - (int)(grabFraction * width);
+    rect.top = grab.y - grabOffsetY;
+    rect.right = rect.left + width;
+    rect.bottom = rect.top + height;
+    moveWindow<RESIZE>(hWnd, rect, false);
+    return true;
 }
 
 template <ResizerCursor cursor>

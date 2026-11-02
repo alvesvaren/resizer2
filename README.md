@@ -28,6 +28,7 @@ Rewrite of https://github.com/IsacEkeroth/ahk-resize-windows in C++
 - Win + Left Mouse Button to move windows. If a window is fullscreened or maximized, it will snap between monitors
 - Win + Shift + Left Mouse Button to snap windows. 
   You can snap windows to each quadrant of the screen, or each half of the screen. Move the mouse close to the zone you want to snap to!
+  Once you let go of Win and Shift, the window is snapped the same way Windows snaps it, so you can drag the edge between two snapped windows to resize both.
 - Win + Right Mouse Button to resize windows from the closest corner
 - Win + Scroll Up/Down to change window opacity
 - Win + Middle mouse to minimize a window
@@ -44,7 +45,8 @@ Rewrite of https://github.com/IsacEkeroth/ahk-resize-windows in C++
 
 ## Quirks:
 
-- To not make the start menu appear, it fakes the combination Win+LShift, which usually doesn't do anything, but might conflict with other hotkeys you have set up.
+- To not make the start menu appear, it fakes a press of an unassigned key (vkE8) together with the Windows key.
+- Snapping uses the Win + Arrow shortcuts behind the scenes, since Windows has no other way for apps to snap a window. If Snap Assist is turned on, it can show up after a snap.
 - It needs to run as administrator to work for system windows (such as the task manager), if you don't want this, use the portable version.
 - Some fullscreen apps really doesn't like being moved to another monitor, so depending on the application it may or may not work as expected. Please report any broken apps as an issue, and I'll add it to the blacklist!
 - Only precompiled to x64, but should work on arm64 with emulation. 32-bit might work if you compile it yourself!

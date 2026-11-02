@@ -83,6 +83,88 @@ void WindowPositioner::run() {
     }
 }
 
+bool showWindowContentsWhileDragging() {
+    BOOL showContents = TRUE;
+    SystemParametersInfo(SPI_GETDRAGFULLWINDOWS, 0, &showContents, 0);
+    return showContents;
+}
+
+void pumpMessages() {
+    MSG msg;
+    while (PeekMessage(&msg, NULL, 0, 0, PM_REMOVE)) {
+        TranslateMessage(&msg);
+        DispatchMessage(&msg);
+    }
+}
+
+// A halftone of black and white pixels, like Windows' own drag frame, so the outline shows up on
+// any background
+static HBRUSH getHalftoneBrush() {
+    static HBRUSH brush = [] {
+        WORD pattern[8];
+        for (int row = 0; row < 8; row++) pattern[row] = row % 2 ? 0xAAAA : 0x5555;
+        HBITMAP bitmap = CreateBitmap(8, 8, 1, 1, pattern);
+        HBRUSH halftone = CreatePatternBrush(bitmap);
+        DeleteObject(bitmap);
+        return halftone;
+    }();
+    return brush;
+}
+
+static const wchar_t* registerDragOutlineClass() {
+    static const wchar_t* name = [] {
+        WNDCLASSW wc{};
+        wc.lpfnWndProc = DefWindowProcW;
+        wc.hInstance = GetModuleHandleW(NULL);
+        wc.hbrBackground = getHalftoneBrush();
+        wc.lpszClassName = L"resizer2DragOutline";
+        RegisterClassW(&wc);
+        return wc.lpszClassName;
+    }();
+    return name;
+}
+
+DragOutline::DragOutline(HWND target) {
+    RECT window{};
+    GetWindowRect(target, &window);
+    RECT frame = getWindowFrameBounds(target);
+    margins = { frame.left - window.left, frame.top - window.top, window.right - frame.right, window.bottom - frame.bottom };
+    thickness = GetSystemMetricsForDpi(SM_CXSIZEFRAME, GetDpiForWindow(target));
+
+    for (HWND& edge : edges) {
+        edge = CreateWindowExW(WS_EX_LAYERED | WS_EX_TRANSPARENT | WS_EX_TOOLWINDOW | WS_EX_TOPMOST | WS_EX_NOACTIVATE,
+            registerDragOutlineClass(), L"", WS_POPUP, 0, 0, 0, 0, NULL, NULL, GetModuleHandleW(NULL), NULL);
+        SetLayeredWindowAttributes(edge, 0, 255, LWA_ALPHA);
+    }
+    move(window);
+}
+
+DragOutline::~DragOutline() {
+    for (HWND edge : edges) DestroyWindow(edge);
+}
+
+void DragOutline::move(RECT windowRect) {
+    RECT frame = {
+        windowRect.left + margins.left, windowRect.top + margins.top,
+        windowRect.right - margins.right, windowRect.bottom - margins.bottom,
+    };
+    RECT edgeRects[4] = {
+        { frame.left, frame.top, frame.right, frame.top + thickness },
+        { frame.left, frame.bottom - thickness, frame.right, frame.bottom },
+        { frame.left, frame.top + thickness, frame.left + thickness, frame.bottom - thickness },
+        { frame.right - thickness, frame.top + thickness, frame.right, frame.bottom - thickness },
+    };
+
+    HDWP positions = BeginDeferWindowPos(4);
+    for (int i = 0; i < 4; i++) {
+        RECT& r = edgeRects[i];
+        positions = DeferWindowPos(positions, edges[i], HWND_TOPMOST, r.left, r.top,
+            max(0L, r.right - r.left), max(0L, r.bottom - r.top), SWP_NOACTIVATE | SWP_SHOWWINDOW);
+    }
+    EndDeferWindowPos(positions);
+    pumpMessages();
+}
+
 void adjustRect(HWND win, RECT& rect) {
     LONG style = GetWindowLong(win, GWL_STYLE);
     LONG styleEx = GetWindowLong(win, GWL_EXSTYLE);
@@ -199,11 +281,11 @@ static void fitZoneToSnappedNeighbours(HWND hWnd, const RECT& work, RECT& zone) 
     fitAxis(&RECT::top, &RECT::bottom, &RECT::left, &RECT::right);
 }
 
-bool snapToFancyZone(HWND hWnd, HMONITOR hMon, POINT mousePos, bool maximized)
+std::optional<RECT> getFancyZoneRect(HWND hWnd, HMONITOR hMon, POINT mousePos, bool maximized)
 {
     MONITORINFO mi{};
     mi.cbSize = sizeof(mi);
-    if (!GetMonitorInfo(hMon, &mi)) return false;
+    if (!GetMonitorInfo(hMon, &mi)) return std::nullopt;
 
     int monWidth = mi.rcWork.right - mi.rcWork.left;
     int monHeight = mi.rcWork.bottom - mi.rcWork.top;
@@ -286,28 +368,26 @@ bool snapToFancyZone(HWND hWnd, HMONITOR hMon, POINT mousePos, bool maximized)
         }
     }
 
-    if (shouldMove) {
-        fitZoneToSnappedNeighbours(hWnd, mi.rcWork, newRect);
+    if (!shouldMove) return std::nullopt;
 
-        // Expand to include DWM frame so the visible frame fits the zone exactly
-        RECT currentWindowRect{};
-        GetWindowRect(hWnd, &currentWindowRect);
-        RECT currentFrameRect = getWindowFrameBounds(hWnd);
+    fitZoneToSnappedNeighbours(hWnd, mi.rcWork, newRect);
 
-        int leftMargin = currentFrameRect.left - currentWindowRect.left;
-        int topMargin = currentFrameRect.top - currentWindowRect.top;
-        int rightMargin = currentWindowRect.right - currentFrameRect.right;
-        int bottomMargin = currentWindowRect.bottom - currentFrameRect.bottom;
+    // Expand to include DWM frame so the visible frame fits the zone exactly
+    RECT currentWindowRect{};
+    GetWindowRect(hWnd, &currentWindowRect);
+    RECT currentFrameRect = getWindowFrameBounds(hWnd);
 
-        RECT targetOuter{};
-        targetOuter.left = newRect.left - leftMargin;
-        targetOuter.top = newRect.top - topMargin;
-        targetOuter.right = newRect.right + rightMargin;
-        targetOuter.bottom = newRect.bottom + bottomMargin;
+    int leftMargin = currentFrameRect.left - currentWindowRect.left;
+    int topMargin = currentFrameRect.top - currentWindowRect.top;
+    int rightMargin = currentWindowRect.right - currentFrameRect.right;
+    int bottomMargin = currentWindowRect.bottom - currentFrameRect.bottom;
 
-        moveWindow<RESIZE>(hWnd, targetOuter);
-    }
-    return shouldMove;
+    RECT targetOuter{};
+    targetOuter.left = newRect.left - leftMargin;
+    targetOuter.top = newRect.top - topMargin;
+    targetOuter.right = newRect.right + rightMargin;
+    targetOuter.bottom = newRect.bottom + bottomMargin;
+    return targetOuter;
 }
 
 static void sendKey(WORD vk, bool up) {

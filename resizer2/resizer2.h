@@ -10,6 +10,7 @@
 #include <chrono>
 #include <unordered_set>
 #include <vector>
+#include <optional>
 #include <string>
 #include <shellapi.h>
 #include <WtsApi32.h>
@@ -104,7 +105,7 @@ void startWindowOperation();
 void stopWindowOperation();
 HWND getTopLevelParent(HWND hwnd);
 void snapToMonitor(HWND window, HMONITOR screen);
-bool snapToFancyZone(HWND hWnd, HMONITOR hMon, POINT mousePos, bool maximized);
+std::optional<RECT> getFancyZoneRect(HWND hWnd, HMONITOR hMon, POINT mousePos, bool maximized);
 void setWindowSnappedToZone(HWND hWnd, bool snapped);
 bool unsnapWindow(HWND hWnd, POINT grab, RECT& rect);
 struct ResizeParticipant {

@@ -41,6 +41,7 @@ Rewrite of https://github.com/IsacEkeroth/ahk-resize-windows in C++
 ## Extra features:
 
 - Changes the system cursors to reflect what's happening
+- Respects the "Show window contents while dragging" setting: when it is off, an outline shows where the window will end up
 - Can be closed from the system tray
 
 ## Quirks:

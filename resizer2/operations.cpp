@@ -163,13 +163,13 @@ DWORD WINAPI WindowOperationThreadProc(LPVOID lpParam) {
 			outline.emplace(ctx.targetWindow);
 		}
 		std::optional<RECT> placed;
-		auto place = [&](RECT rect, ContextType type) {
+		auto place = [&](RECT rect) {
 			placed = rect;
 			if (outline) {
 				outline->move(rect);
 			}
 			else {
-				positioner->request(rect, type);
+				positioner->request(rect);
 			}
 		};
 
@@ -217,7 +217,7 @@ DWORD WINAPI WindowOperationThreadProc(LPVOID lpParam) {
 				HMONITOR screen = SysGetMonitorContainingPoint(pt.x, pt.y);
 				std::optional<RECT> zoneRect = getFancyZoneRect(ctx.targetWindow, screen, pt, maximized);
 				snappedToZone = zoneRect.has_value();
-				if (zoneRect) place(*zoneRect, RESIZE);
+				if (zoneRect) place(*zoneRect);
 			}
 			else {
 				if (wasInZoneMode) {
@@ -225,7 +225,7 @@ DWORD WINAPI WindowOperationThreadProc(LPVOID lpParam) {
 					snappedToZone = false;
 					RECT newRect = ctx.startWindowRect;
 					OffsetRect(&newRect, dx, dy);
-					place(newRect, RESIZE);
+					place(newRect);
 				}
 				if (maximized) {
 					// Option A: Just re-snap to the monitor so user can
@@ -239,7 +239,7 @@ DWORD WINAPI WindowOperationThreadProc(LPVOID lpParam) {
 					rect.right += dx;
 					rect.top += dy;
 					rect.bottom += dy;
-					place(rect, MOVE);
+					place(rect);
 				}
 			}
 

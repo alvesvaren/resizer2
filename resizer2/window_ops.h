@@ -57,6 +57,8 @@ private:
 };
 
 // Applies the latest requested size and position to a window from a thread of its own.
+// Each request describes the whole window rect, so requests can be dropped in favour of a newer
+// one without losing a size change.
 // SetWindowPos on another process's window waits until that app has handled the change, so a
 // slow app only delays its own updates, and requests made meanwhile collapse into the newest one
 // instead of queueing up behind it.
@@ -67,7 +69,7 @@ public:
     WindowPositioner(const WindowPositioner&) = delete;
     WindowPositioner& operator=(const WindowPositioner&) = delete;
 
-    void request(RECT rect, ContextType type = RESIZE);
+    void request(RECT rect);
 
 private:
     void run();
@@ -75,7 +77,7 @@ private:
     HWND hwnd;
     std::mutex mutex;
     std::condition_variable changed;
-    std::optional<std::pair<RECT, ContextType>> pending;
+    std::optional<RECT> pending;
     bool stopping = false;
     std::thread thread;
 };

@@ -32,7 +32,6 @@ constexpr BYTE MIN_OPACITY = 64;
 constexpr BYTE MAX_OPACITY = 255;
 constexpr BYTE OPACITY_STEP = 26; // Around 10% of 255
 constexpr int DUMMY_KEY = 0xE8; // Unassigned virtual key: stops the Start menu opening without taking part in Win+Shift+arrow shortcuts
-constexpr double CORNER_RADIUS_FRACTION = 0.33; // 1/3 of monitor dimension
 
 const std::unordered_set<std::wstring> disallowedClasses{
 	L"ControlCenterWindow",

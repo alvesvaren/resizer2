@@ -205,6 +205,8 @@ DWORD WINAPI WindowOperationThreadProc(LPVOID lpParam) {
 			ShowWindow(ctx.targetWindow, SW_RESTORE);
 		}
 
+		std::vector<ResizeParticipant> participants = getResizeParticipants(ctx.targetWindow, isLeft, isTop);
+
 		while (ctx.inProgress) {
 			if (WaitForSingleObject(ctx.hEvent, 0) == WAIT_OBJECT_0) {
 				break;
@@ -214,21 +216,12 @@ DWORD WINAPI WindowOperationThreadProc(LPVOID lpParam) {
 			int dx = pt.x - ctx.startMousePos.x;
 			int dy = pt.y - ctx.startMousePos.y;
 
-			RECT newRect = currentWindowRect;
-			if (isLeft) {
-				newRect.left += dx;
+			for (auto& [hwnd, start, xEdge, yEdge] : participants) {
+				RECT newRect = start;
+				if (xEdge) newRect.*xEdge += dx;
+				if (yEdge) newRect.*yEdge += dy;
+				moveWindow<RESIZE>(hwnd, newRect, false);
 			}
-			else {
-				newRect.right += dx;
-			}
-			if (isTop) {
-				newRect.top += dy;
-			}
-			else {
-				newRect.bottom += dy;
-			}
-
-			moveWindow<RESIZE>(ctx.targetWindow, newRect, false);
 
 			Sleep(1);
 		}

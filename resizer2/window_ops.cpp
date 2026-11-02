@@ -1,5 +1,6 @@
 #include "window_ops.h"
 #include <mutex>
+#include <optional>
 #include <set>
 
 const std::array<int, 13> systemCursors{{
@@ -95,6 +96,67 @@ void snapToMonitor(HWND window, HMONITOR screen) {
     ShowWindow(window, SW_MAXIMIZE);
 }
 
+typedef BOOL(WINAPI* IsWindowArranged_t)(HWND);
+static const IsWindowArranged_t isWindowArranged =
+    (IsWindowArranged_t)GetProcAddress(GetModuleHandleW(L"user32.dll"), "IsWindowArranged");
+
+// A frame edge within this many pixels of a work area edge counts as touching it
+constexpr int EDGE_TOLERANCE = 8;
+
+static bool touches(LONG edge, LONG workEdge) {
+    return abs(edge - workEdge) <= EDGE_TOLERANCE;
+}
+
+struct SnappedWindow {
+    HWND hwnd;
+    RECT frame;
+};
+
+// Snapped windows shown on the given monitor, topmost first
+static std::vector<SnappedWindow> getSnappedWindows(HMONITOR monitor, HWND exclude) {
+    struct Search { HMONITOR monitor; HWND exclude; std::vector<SnappedWindow> found; };
+    Search search{ monitor, exclude };
+    if (!isWindowArranged) return search.found;
+
+    EnumWindows([](HWND other, LPARAM param) -> BOOL {
+        auto& [monitor, exclude, found] = *(Search*)param;
+        BOOL cloaked = FALSE;
+        DwmGetWindowAttribute(other, DWMWA_CLOAKED, &cloaked, sizeof(cloaked));
+        if (other != exclude && IsWindowVisible(other) && !IsIconic(other) && !cloaked && isWindowArranged(other) &&
+            MonitorFromWindow(other, MONITOR_DEFAULTTONEAREST) == monitor) {
+            found.push_back({ other, getWindowFrameBounds(other) });
+        }
+        return TRUE;
+    }, (LPARAM)&search);
+    return search.found;
+}
+
+static MONITORINFO getMonitorInfo(HWND hWnd) {
+    MONITORINFO mi{};
+    mi.cbSize = sizeof(mi);
+    GetMonitorInfo(MonitorFromWindow(hWnd, MONITOR_DEFAULTTONEAREST), &mi);
+    return mi;
+}
+
+// When the other side of the screen already holds a snapped window, Windows snaps a new window
+// into the space next to it instead of the exact half. Predict that, so the window does not jump
+// when the zone is snapped natively.
+static void fitZoneToSnappedNeighbour(HWND hWnd, const RECT& work, RECT& zone) {
+    if (zone.right - zone.left >= work.right - work.left) return;
+
+    for (auto& [other, frame] : getSnappedWindows(MonitorFromRect(&work, MONITOR_DEFAULTTONEAREST), hWnd)) {
+        if (frame.top >= zone.bottom || frame.bottom <= zone.top) continue;
+        if (zone.left == work.left && touches(frame.right, work.right) && frame.left > zone.left) {
+            zone.right = frame.left;
+            return;
+        }
+        if (zone.right == work.right && touches(frame.left, work.left) && frame.right < zone.right) {
+            zone.left = frame.right;
+            return;
+        }
+    }
+}
+
 bool snapToFancyZone(HWND hWnd, HMONITOR hMon, POINT mousePos, bool maximized)
 {
     MONITORINFO mi{};
@@ -183,6 +245,8 @@ bool snapToFancyZone(HWND hWnd, HMONITOR hMon, POINT mousePos, bool maximized)
     }
 
     if (shouldMove) {
+        fitZoneToSnappedNeighbour(hWnd, mi.rcWork, newRect);
+
         // Expand to include DWM frame so the visible frame fits the zone exactly
         RECT currentWindowRect{};
         GetWindowRect(hWnd, &currentWindowRect);
@@ -203,10 +267,6 @@ bool snapToFancyZone(HWND hWnd, HMONITOR hMon, POINT mousePos, bool maximized)
     }
     return shouldMove;
 }
-
-typedef BOOL(WINAPI* IsWindowArranged_t)(HWND);
-static const IsWindowArranged_t isWindowArranged =
-    (IsWindowArranged_t)GetProcAddress(GetModuleHandleW(L"user32.dll"), "IsWindowArranged");
 
 static void sendKey(WORD vk, bool up) {
     INPUT in{};
@@ -240,9 +300,9 @@ static bool forceForegroundWindow(HWND hWnd) {
     return GetForegroundWindow() == hWnd;
 }
 
-// Which part of its monitor's work area a window covers, judged from its visible frame. A side
-// that spans the whole work area has no position, so left/top are false there and zones compare
-// with plain equality.
+// Which part of its monitor's work area a window covers, judged from which work area edges its
+// visible frame touches. A side that spans the whole work area has no position, so left/top are
+// false there and zones compare with plain equality.
 struct Zone {
     bool halfWidth, halfHeight, left, top;
     bool operator==(const Zone&) const = default;
@@ -250,18 +310,12 @@ struct Zone {
 
 static Zone getZone(HWND hWnd) {
     RECT frame = getWindowFrameBounds(hWnd);
-    MONITORINFO mi{};
-    mi.cbSize = sizeof(mi);
-    GetMonitorInfo(MonitorFromWindow(hWnd, MONITOR_DEFAULTTONEAREST), &mi);
-    RECT& work = mi.rcWork;
-    bool halfWidth = (frame.right - frame.left) < (work.right - work.left) * 3 / 4;
-    bool halfHeight = (frame.bottom - frame.top) < (work.bottom - work.top) * 3 / 4;
-    return {
-        halfWidth,
-        halfHeight,
-        halfWidth && (frame.left + frame.right) / 2 < (work.left + work.right) / 2,
-        halfHeight && (frame.top + frame.bottom) / 2 < (work.top + work.bottom) / 2,
-    };
+    RECT work = getMonitorInfo(hWnd).rcWork;
+    bool touchesLeft = touches(frame.left, work.left);
+    bool touchesTop = touches(frame.top, work.top);
+    bool halfWidth = !(touchesLeft && touches(frame.right, work.right));
+    bool halfHeight = !(touchesTop && touches(frame.bottom, work.bottom));
+    return { halfWidth, halfHeight, halfWidth && touchesLeft, halfHeight && touchesTop };
 }
 
 static bool waitForZone(HWND hWnd, Zone expected) {
@@ -360,6 +414,46 @@ void setWindowSnappedToZone(HWND hWnd, bool snapped) {
         markerRunning = true;
         CloseHandle(thread);
     }
+}
+
+// Resizing a snapped window works like dragging the lines between snapped windows: only edges
+// inside the work area move, and every snapped window with an edge on the same line moves that
+// edge along, so a divider through a whole grid of windows moves as one and every window stays
+// snapped. Edges along the work area border stay put, since moving them would unsnap the window.
+// An unsnapped window is alone on its lines and both grabbed edges move.
+std::vector<ResizeParticipant> getResizeParticipants(HWND hWnd, bool isLeft, bool isTop) {
+    RECT start{};
+    GetWindowRect(hWnd, &start);
+    LONG RECT::* xEdge = isLeft ? &RECT::left : &RECT::right;
+    LONG RECT::* yEdge = isTop ? &RECT::top : &RECT::bottom;
+    if (!isWindowArranged || !isWindowArranged(hWnd)) return { { hWnd, start, xEdge, yEdge } };
+
+    RECT frame = getWindowFrameBounds(hWnd);
+    RECT work = getMonitorInfo(hWnd).rcWork;
+    std::optional<LONG> xLine = touches(frame.*xEdge, work.*xEdge) ? std::nullopt : std::optional(frame.*xEdge);
+    std::optional<LONG> yLine = touches(frame.*yEdge, work.*yEdge) ? std::nullopt : std::optional(frame.*yEdge);
+
+    // The edge of a frame that lies on the line, if any
+    auto edgeOnLine = [](const RECT& frame, std::optional<LONG> line, LONG RECT::* first, LONG RECT::* second) -> LONG RECT::* {
+        if (!line) return nullptr;
+        if (touches(frame.*first, *line)) return first;
+        if (touches(frame.*second, *line)) return second;
+        return nullptr;
+    };
+
+    std::vector<ResizeParticipant> participants = {
+        { hWnd, start, xLine ? xEdge : nullptr, yLine ? yEdge : nullptr },
+    };
+    for (auto& [other, otherFrame] : getSnappedWindows(MonitorFromWindow(hWnd, MONITOR_DEFAULTTONEAREST), hWnd)) {
+        LONG RECT::* otherX = edgeOnLine(otherFrame, xLine, &RECT::left, &RECT::right);
+        LONG RECT::* otherY = edgeOnLine(otherFrame, yLine, &RECT::top, &RECT::bottom);
+        if (!otherX && !otherY) continue;
+
+        RECT otherStart{};
+        GetWindowRect(other, &otherStart);
+        participants.push_back({ other, otherStart, otherX, otherY });
+    }
+    return participants;
 }
 
 // Like a native drag: moving a snapped window un-snaps it and gives back its pre-snap size, with the

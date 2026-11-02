@@ -105,6 +105,13 @@ void snapToMonitor(HWND window, HMONITOR screen);
 bool snapToFancyZone(HWND hWnd, HMONITOR hMon, POINT mousePos, bool maximized);
 void setWindowSnappedToZone(HWND hWnd, bool snapped);
 bool unsnapWindow(HWND hWnd, POINT grab, RECT& rect);
+struct ResizeParticipant {
+    HWND hwnd;
+    RECT start;
+    LONG RECT::* xEdge; // edge that follows the mouse horizontally, if any
+    LONG RECT::* yEdge; // edge that follows the mouse vertically, if any
+};
+std::vector<ResizeParticipant> getResizeParticipants(HWND hWnd, bool isLeft, bool isTop);
 template <ResizerCursor cursor>
 void SetGlobalCursor();
 void AddTrayIcon(HWND hWnd);

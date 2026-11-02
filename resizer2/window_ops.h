@@ -17,6 +17,7 @@ void snapToMonitor(HWND window, HMONITOR screen);
 bool snapToFancyZone(HWND hWnd, HMONITOR hMon, POINT mousePos, bool maximized);
 void setWindowSnappedToZone(HWND hWnd, bool snapped);
 bool unsnapWindow(HWND hWnd, POINT grab, RECT& rect);
+std::vector<ResizeParticipant> getResizeParticipants(HWND hWnd, bool isLeft, bool isTop);
 
 template <ContextType type>
 void moveWindow(HWND hwnd, RECT rect, bool async = true);

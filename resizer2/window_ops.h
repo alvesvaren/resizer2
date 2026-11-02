@@ -19,15 +19,17 @@ bool isWindowAllowed(HWND win);
 RECT getWindowFrameBounds(HWND hWnd);
 void snapToMonitor(HWND window, HMONITOR screen);
 std::optional<RECT> getFancyZoneRect(HWND hWnd, HMONITOR hMon, POINT mousePos, bool maximized);
-void setWindowSnappedToZone(HWND hWnd, bool snapped);
+void markWindowArranged(HWND hWnd);
 bool unsnapWindow(HWND hWnd, POINT grab, RECT& rect);
 std::vector<ResizeParticipant> getResizeParticipants(HWND hWnd, LONG RECT::* xEdge, LONG RECT::* yEdge);
 
 template <ContextType type>
 void moveWindow(HWND hwnd, RECT rect, bool async = true);
 
-// Waits for the next composed frame, so window updates go out once per displayed frame
-void waitForNextFrame();
+// Operation loops wait for input instead of polling, so windows follow the cursor without delay.
+// The hooks call notifyInput on every input event during an operation.
+void notifyInput();
+void waitForInput();
 
 // Whether "Show window contents while dragging" is on; if not, operations show an outline instead
 bool showWindowContentsWhileDragging();
@@ -65,7 +67,7 @@ public:
     WindowPositioner(const WindowPositioner&) = delete;
     WindowPositioner& operator=(const WindowPositioner&) = delete;
 
-    void request(RECT rect);
+    void request(RECT rect, ContextType type = RESIZE);
 
 private:
     void run();
@@ -73,7 +75,7 @@ private:
     HWND hwnd;
     std::mutex mutex;
     std::condition_variable changed;
-    std::optional<RECT> pending;
+    std::optional<std::pair<RECT, ContextType>> pending;
     bool stopping = false;
     std::thread thread;
 };

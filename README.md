@@ -28,7 +28,7 @@ Rewrite of https://github.com/IsacEkeroth/ahk-resize-windows in C++
 - Win + Left Mouse Button to move windows. If a window is fullscreened or maximized, it will snap between monitors
 - Win + Shift + Left Mouse Button to snap windows. 
   You can snap windows to each quadrant of the screen, or each half of the screen. Move the mouse close to the zone you want to snap to!
-  Once you let go of Win and Shift, the window is snapped the same way Windows snaps it, so you can drag the edge between two snapped windows to resize both.
+  Pushing the window against a screen edge snaps it the same way. When you let go, the window is snapped the same way Windows snaps it, so you can drag the edge between two snapped windows to resize both.
 - Win + Right Mouse Button to resize windows from the closest corner
 - Win + Scroll Up/Down to change window opacity
 - Win + Middle mouse to minimize a window
